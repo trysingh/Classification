@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, progress, empty %}
+{% block title %}Job history - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="page-head">
+    <div><h1>Job history</h1><p class="lede">Every run, on-demand or from a folder. Open one to see live progress per file.</p></div>
+    <div class="row"><a class="btn primary" href="/single">Classify a file</a><a class="btn" href="/batch">Run a folder batch</a></div>
+  </div>
+  <section class="panel">
+    {% if jobs %}
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>Job</th><th>Type</th><th>Status</th><th class="r">Files done</th><th>Progress</th><th>Created</th><th></th></tr></thead>
+      <tbody>
+      {% for j in jobs %}
+        <tr>
+          <td><a href="/jobs/{{ j.id }}">#{{ j.id }}</a></td>
+          <td>{{ 'On-demand' if j.kind == 'single' else 'Folder batch' }}</td>
+          <td>{{ badge(j.status) }}</td>
+          <td class="r">{{ j.counts.completed }} / {{ j.counts.files }}{% if j.counts.failed %} <span class="badge b-bad">{{ j.counts.failed }} failed</span>{% endif %}</td>
+          <td style="width:20%">{{ progress(j.percent) }}</td>
+          <td class="min">{{ j.created|dt }}</td>
+          <td class="r"><a class="btn sm" href="/jobs/{{ j.id }}">Open</a></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+      {% call empty('No jobs yet', 'Jobs appear here as soon as you start one.') %}<a class="btn primary" href="/single">Classify a file</a>{% endcall %}
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

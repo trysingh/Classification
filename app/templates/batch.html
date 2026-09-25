@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}Batch from folder - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="page-head">
+    <div>
+      <h1>Batch job from a folder</h1>
+      <p class="lede">Point at a folder of files, choose which to include, and start one background job. It keeps running if you close this page or lose your connection.</p>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Folder</h2></div>
+    <div class="panel-body stack">
+      <div class="field">
+        <label for="folder">Folder on the server</label>
+        <div class="row">
+          <input type="text" id="folder" value="{{ folder }}" style="flex:1;min-width:16rem">
+          <button type="button" class="btn" id="scan">Scan folder</button>
+          <label class="btn" for="add-files" id="add-label">Add files to this folder</label>
+          <input type="file" id="add-files" multiple hidden accept="{{ settings.allowed_extensions|join(',') }}">
+        </div>
+        <span class="hint">Relative paths are read inside the inbox folder. Files you add here are copied into the folder shown.</span>
+      </div>
+      <div id="scan-error" class="alert error" role="alert" hidden></div>
+    </div>
+  </section>
+
+  <section class="panel" id="files-panel" hidden>
+    <div class="panel-head">
+      <h2 id="files-title">Files</h2>
+      <div class="row">
+        <input type="text" id="apply-supplier" list="sup-list" placeholder="Supplier for all files" style="width:16rem" autocomplete="off">
+        <button type="button" class="btn sm" id="apply-btn">Fill empty rows</button>
+        <datalist id="sup-list">{% for s in suppliers %}<option value="{{ s }}">{% endfor %}</datalist>
+      </div>
+    </div>
+    <div class="table-wrap"><table class="data" id="files-table">
+      <thead><tr>
+        <th><input type="checkbox" id="sel-all" aria-label="Select all files"></th>
+        <th>File</th><th class="r">Size</th><th>Modified</th><th>Text column</th><th>Supplier</th><th>Status</th>
+      </tr></thead>
+      <tbody id="files-body"></tbody>
+    </table></div>
+  </section>
+
+  <section class="panel" id="options" hidden>
+    <div class="panel-head"><h2>Options</h2></div>
+    <div class="panel-body grid two">
+      <div class="field"><label for="profile">Dataset type</label>
+        <select id="profile">{% for k, label in profiles.items() %}<option value="{{ k }}" {{ 'selected' if k == default_profile else '' }}>{{ label }}</option>{% endfor %}</select>
+        <span class="hint">Changing it re-scans the folder to re-detect the text column.</span></div>
+      <div class="field"><label for="backend">Engine</label>
+        <select id="backend">{% for b in backends %}<option value="{{ b.name }}" {{ 'selected' if b.name == default_backend else '' }}>{{ b.label }}{{ '' if b.installed else ' (needs ' ~ b.needs ~ ')' }}</option>{% endfor %}</select></div>
+      <div class="field"><label for="text-col">Text column name (optional)</label>
+        <input type="text" id="text-col" placeholder="Leave blank to auto-detect per file">
+        <span class="hint">Use when every file uses the same column but auto-detection misses it.</span></div>
+    </div>
+  </section>
+
+  <div id="submit-error" class="alert error" role="alert" hidden></div>
+  <div class="row">
+    <button type="button" id="start" class="btn primary" disabled>Start batch job</button>
+    <span class="hint" id="start-hint">Scan a folder to see its files.</span>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/batch.js"></script>{% endblock %}

@@ -1,0 +1,13 @@
+# Web app + persistence (enough to run with the built-in "keyword" engine)
+fastapi>=0.110
+uvicorn[standard]>=0.29
+jinja2>=3.1
+sqlalchemy>=2.0
+pydantic>=2.6
+pydantic-settings>=2.2
+pandas>=2.1
+openpyxl>=3.1
+python-multipart>=0.0.9
+requests>=2.31
+# Optional: legacy .xls files
+# xlrd>=2.0

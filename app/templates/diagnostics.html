@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}Diagnostics - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="page-head">
+    <div><h1>Diagnostics</h1><p class="lede">Everything needed to debug the system without server access: health checks, recent errors with stack traces, and the log tail.</p></div>
+    <div class="row">
+      <span class="badge b-{{ 'ok' if report.status == 'ok' else ('warn' if report.status == 'warn' else 'bad') }}">{{ 'All checks passed' if report.status == 'ok' else ('Needs attention' if report.status == 'warn' else 'Problems found') }}</span>
+      <a class="btn" href="/diagnostics">Run checks again</a>
+    </div>
+  </div>
+
+  <section class="panel">
+    <div class="panel-head"><h2>System checks</h2><span class="muted small">{{ report.checked_at }}</span></div>
+    <div class="table-wrap"><table class="data"><tbody>
+      {% for c in report.checks %}
+        <tr><td style="width:14rem"><strong>{{ c.name }}</strong></td>
+            <td style="width:7rem"><span class="badge b-{{ 'ok' if c.status == 'ok' else ('warn' if c.status == 'warn' else 'bad') }}">{{ 'OK' if c.status == 'ok' else ('Check' if c.status == 'warn' else 'Failed') }}</span></td>
+            <td class="muted">{{ c.detail }}</td></tr>
+      {% endfor %}
+    </tbody></table></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Recent errors</h2><span class="muted small">Newest first. The reference matches the one shown to users and in the log.</span></div>
+    {% if errors %}
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>When</th><th>Where</th><th>What happened</th><th>Reference</th></tr></thead>
+      <tbody>
+      {% for e in errors %}
+        <tr><td class="min">{{ e.ts|dt }}</td><td class="mono">{{ e.scope }}</td>
+            <td>{{ e.message }}{% if e.detail %}<details><summary class="small">Stack trace</summary><pre>{{ e.detail }}</pre></details>{% endif %}</td>
+            <td class="mono">{{ e.ref or '-' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}<div class="empty"><h3>No errors recorded</h3><p>Failures in requests, jobs and files will be listed here.</p></div>{% endif %}
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Log (latest lines)</h2><span class="muted small">{{ settings.log_dir }}/app.log</span></div>
+    <div class="panel-body"><pre>{{ log_tail }}</pre></div>
+  </section>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Effective configuration</h2><span class="muted small">Dataset types: {{ profile_keys|join(', ') }}. Edit app/config.py or use OPENJEV_ variables.</span></div>
+    <div class="panel-body"><details><summary>Show settings</summary><pre>{{ config|tojson(indent=2) }}</pre></details></div>
+  </section>
+</div>
+{% endblock %}

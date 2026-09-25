@@ -1,0 +1,12 @@
+{# _macros.html - small view components reused across pages, so status/confidence/category look identical everywhere. #}
+{% macro badge(status) %}<span class="badge s-{{ status }}">{{ status|status_label }}</span>{% endmacro %}
+
+{# Five-bar confidence meter; amber when weak, green when strong. #}
+{% macro meter(v) %}{% set n = [((v or 0) * 5 + 0.999)|int, 5]|min %}<span class="meter m{{ n }}" title="{{ v|pct }} confidence"><i></i><i></i><i></i><i></i><i></i></span>{% endmacro %}
+
+{% macro cat(name) %}<span class="cat {{ name|cat_class }}"><i class="dot"></i>{{ name }}</span>{% endmacro %}
+
+{% macro progress(pct) %}<div class="progress" role="progressbar" aria-valuenow="{{ pct|round|int }}" aria-valuemin="0" aria-valuemax="100"><i style="width:{{ pct }}%"></i></div>{% endmacro %}
+
+{# An empty screen is an invitation to act: pass the action via {% call empty(...) %}. #}
+{% macro empty(title, text) %}<div class="empty"><h3>{{ title }}</h3><p>{{ text }}</p>{% if caller %}<p><br>{{ caller() }}</p>{% endif %}</div>{% endmacro %}

@@ -1,0 +1,4 @@
+# System-1 model engines (install only what you use)
+torch
+transformers
+# laya            # Convai Laya backend

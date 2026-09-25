@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% from "_macros.html" import empty %}
+{% block title %}Suppliers - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="page-head">
+    <div><h1>Suppliers</h1><p class="lede">Every processed file is linked to a supplier. Entering an existing name reuses the record instead of creating a duplicate.</p></div>
+  </div>
+  <div class="grid side">
+    <section class="panel">
+      {% if suppliers %}
+      <div class="table-wrap"><table class="data">
+        <thead><tr><th>Name</th><th>Code</th><th>Country</th><th>Contact</th><th class="r">Files</th><th></th></tr></thead>
+        <tbody>
+        {% for s in suppliers %}
+          <tr>
+            <td><strong>{{ s.name }}</strong>{% if s.notes %}<div class="small muted trunc" title="{{ s.notes }}">{{ s.notes }}</div>{% endif %}</td>
+            <td>{{ s.code or '-' }}</td><td>{{ s.country or '-' }}</td><td>{{ s.contact_email or '-' }}</td>
+            <td class="r">{% if s.files %}<a href="/files?supplier_id={{ s.id }}">{{ s.files }}</a>{% else %}0{% endif %}</td>
+            <td class="r min">
+              <a class="btn sm" href="/suppliers?edit={{ s.id }}">Edit</a>
+              <form method="post" action="/suppliers/{{ s.id }}/delete" style="display:inline" onsubmit="return confirm('Delete this supplier?')"><button class="btn sm danger">Delete</button></form>
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+      {% else %}{% call empty('No suppliers yet', 'Add one here, or enter a name when you classify a file.') %}{% endcall %}{% endif %}
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>{{ 'Edit supplier' if editing else 'Add supplier' }}</h2>{% if editing %}<a class="small" href="/suppliers">Cancel</a>{% endif %}</div>
+      <div class="panel-body">
+        <form method="post" action="/suppliers/save">
+          <input type="hidden" name="id" value="{{ editing.id if editing else '' }}">
+          <div class="field"><label for="f-name">Name (required)</label><input type="text" id="f-name" name="name" required maxlength="200" value="{{ editing.name if editing else '' }}"></div>
+          <div class="cols2">
+            <div class="field"><label for="f-code">Code</label><input type="text" id="f-code" name="code" maxlength="80" value="{{ editing.code if editing else '' }}"></div>
+            <div class="field"><label for="f-country">Country</label><input type="text" id="f-country" name="country" maxlength="80" value="{{ editing.country if editing else '' }}"></div>
+          </div>
+          <div class="field"><label for="f-email">Contact email</label><input type="email" id="f-email" name="contact_email" value="{{ editing.contact_email if editing else '' }}"></div>
+          <div class="field"><label for="f-notes">Notes</label><textarea id="f-notes" name="notes" rows="3">{{ editing.notes if editing else '' }}</textarea></div>
+          <button class="btn primary block">{{ 'Save changes' if editing else 'Add supplier' }}</button>
+        </form>
+      </div>
+    </section>
+  </div>
+</div>
+{% endblock %}

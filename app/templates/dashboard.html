@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, progress, empty %}
+{% block title %}Overview - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="page-head">
+    <div>
+      <h1>Overview</h1>
+      <p class="lede">Classify supplier files against your taxonomy, review what needs attention, and refine the categories as you learn.</p>
+    </div>
+    <div class="row">
+      <a class="btn primary" href="/single">Classify a file</a>
+      <a class="btn" href="/batch">Run a folder batch</a>
+    </div>
+  </div>
+
+  <div class="strip">
+    <div><b>{{ stats.files|num }}</b><span>Files classified</span></div>
+    <div><b>{{ stats.rows|num }}</b><span>Rows classified</span></div>
+    <div class="{{ 'warn' if stats.review else '' }}"><b>{{ stats.review|num }}</b><span>Rows needing review</span></div>
+    <div class="{{ 'bad' if stats.failed else '' }}"><b>{{ stats.failed|num }}</b><span>Failed files</span></div>
+    <div><b>{{ stats.suppliers|num }}</b><span>Suppliers</span></div>
+  </div>
+
+  {% if active %}
+  <section class="panel">
+    <div class="panel-head"><h2>Running now</h2><a href="/jobs">All jobs</a></div>
+    <div class="table-wrap"><table class="data">
+      <tbody>
+      {% for j in active %}
+        <tr>
+          <td class="min"><a href="/jobs/{{ j.id }}">Job #{{ j.id }}</a></td>
+          <td>{{ 'On-demand' if j.kind == 'single' else 'Folder batch' }}, {{ j.counts.files }} file{{ '' if j.counts.files == 1 else 's' }}</td>
+          <td>{{ badge(j.status) }}</td>
+          <td style="width:30%">{{ progress(j.percent) }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+  </section>
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel-head"><h2>Recent results</h2><a href="/files">All results</a></div>
+    {% if recent %}
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>File</th><th>Supplier</th><th>Status</th><th class="r">Rows</th><th class="r">Need review</th><th>When</th></tr></thead>
+      <tbody>
+      {% for f in recent %}
+        <tr>
+          <td><a href="/files/{{ f.id }}">{{ f.filename }}</a></td>
+          <td>{{ f.supplier.name if f.supplier else '-' }}</td>
+          <td>{{ badge(f.status) }}</td>
+          <td class="r">{{ f.processed_rows|num }}</td>
+          <td class="r">{{ f.review_rows|num }}</td>
+          <td class="min">{{ (f.finished_at or f.created_at)|dt }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+      {% call empty('Nothing classified yet', 'Upload a supplier file to see its category breakdown here.') %}
+        <a class="btn primary" href="/single">Classify your first file</a>
+      {% endcall %}
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Job #{{ job.id }} - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack" id="job" data-id="{{ job.id }}">
+  <div class="page-head">
+    <div>
+      <h1>Job #{{ job.id }}</h1>
+      <p class="lede">{{ 'On-demand run' if job.kind == 'single' else 'Folder batch' }}.
+        Dataset type: {{ settings.profiles[job.profile].label if job.profile in settings.profiles else job.profile }}.
+        Engine: {{ job.backend|backend_label }}.{% if job.folder %} Folder: <span class="mono">{{ job.folder }}</span>{% endif %}</p>
+    </div>
+    <div class="row">
+      <span id="job-status" class="badge"></span>
+      <button type="button" class="btn danger" id="cancel" hidden>Cancel job</button>
+      <button type="button" class="btn" id="retry" hidden>Retry failed files</button>
+    </div>
+  </div>
+
+  <div id="live" class="alert info" hidden>
+    <div class="row"><span class="spin"></span><strong>Processing in the background</strong></div>
+    <span>This page updates by itself. You can close it; the job keeps running on the server and resumes after a restart.</span>
+  </div>
+  <div id="job-error" class="alert error" role="alert" hidden></div>
+
+  <section class="panel">
+    <div class="panel-head"><h2>Files</h2><span class="muted" id="overall"></span></div>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>File</th><th>Status</th><th style="width:30%">Progress</th><th class="r">Need review</th><th class="r">In Others</th><th></th></tr></thead>
+      <tbody id="files-body"></tbody>
+    </table></div>
+  </section>
+</div>
+<script type="application/json" id="job-data">{{ data|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="/static/js/job_detail.js"></script>{% endblock %}

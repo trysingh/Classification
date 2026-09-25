@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, meter, cat, empty %}
+{% block title %}{{ fr.filename }} - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack" id="file" data-id="{{ fr.id }}" data-job="{{ fr.job_id }}" data-status="{{ fr.status }}">
+  <div class="page-head">
+    <div>
+      <h1>{{ fr.filename }}</h1>
+      <p class="lede">Result #{{ fr.id }} from <a href="/jobs/{{ fr.job_id }}">job #{{ fr.job_id }}</a>.</p>
+    </div>
+    <div class="row">
+      {{ badge(fr.status) }}
+      {% if fr.status == 'completed' %}
+        <a class="btn primary" href="/files/{{ fr.id }}/download.json">Download JSON</a>
+        <a class="btn" href="/files/{{ fr.id }}/download.csv">Download CSV</a>
+      {% endif %}
+      {% if fr.status not in ('queued', 'running') %}
+        <button type="button" class="btn" id="reprocess" title="Run this file again using the taxonomy as it is now">Reprocess with current taxonomy</button>
+        <button type="button" class="btn danger" id="delete">Delete</button>
+      {% endif %}
+    </div>
+  </div>
+  <div id="action-error" class="alert error" role="alert" hidden></div>
+
+  {% if fr.status in ('queued', 'running') %}
+  <section class="panel"><div class="panel-body run">
+    <div class="run-head"><span class="spin"></span><h2>Still processing</h2></div>
+    <p class="muted" id="live-phase">{{ fr.phase }}</p>
+    <div class="progress lg" id="live-progress"><i id="live-bar" style="width:{{ 100 * fr.processed_rows / fr.total_rows if fr.total_rows else 35 }}%"></i></div>
+    <p class="hint" id="live-count">{% if fr.total_rows %}{{ fr.processed_rows|num }} of {{ fr.total_rows|num }} rows{% endif %}</p>
+    <p class="hint">This page reloads when the file is done. You can leave; the job keeps running.</p>
+  </div></section>
+  {% endif %}
+
+  {% if fr.status == 'failed' %}
+  <div class="alert error" role="alert">
+    <strong>{{ fr.error_message or 'Processing failed.' }}</strong>
+    {% if fr.error_hint %}<span>{{ fr.error_hint }}</span>{% endif %}
+    {% if fr.error_trace %}<details><summary>Technical details</summary><pre>{{ fr.error_trace }}</pre></details>{% endif %}
+    <span class="small">Fix the cause, then use Retry on <a href="/jobs/{{ fr.job_id }}">the job</a>. Rows already classified are kept.</span>
+  </div>
+  {% endif %}
+
+  <section class="panel">
+    <div class="panel-body"><dl class="meta">
+      <div><dt>Supplier</dt><dd>{% if fr.supplier %}{{ fr.supplier.name }}{% else %}-{% endif %}</dd>
+        {% if fr.supplier %}<div class="small muted">{{ [fr.supplier.code, fr.supplier.country, fr.supplier.contact_email]|select|join(', ') }}</div>{% endif %}</div>
+      <div><dt>Dataset type</dt><dd>{{ profile.label if profile else fr.profile }}</dd></div>
+      <div><dt>Engine</dt><dd>{{ fr.backend|backend_label }}</dd></div>
+      <div><dt>Taxonomy</dt><dd>{% if fr.taxonomy_version %}<a href="/taxonomy?profile={{ fr.profile }}">Version {{ fr.taxonomy_version }}</a>{% else %}-{% endif %}</dd></div>
+      <div><dt>Text column</dt><dd>{{ fr.narration_column or '-' }}</dd></div>
+      <div><dt>Amount column</dt><dd>{{ fr.amount_column or 'None' }}</dd></div>
+      <div><dt>Rows</dt><dd>{{ fr.processed_rows|num }}{% if fr.total_rows %} of {{ fr.total_rows|num }}{% endif %}</dd></div>
+      <div><dt>Processing time</dt><dd>{{ fr.duration_sec|dur }}</dd></div>
+      <div><dt>Finished</dt><dd>{{ fr.finished_at|dt }}</dd></div>
+    </dl></div>
+  </section>
+
+  {% if summary %}
+  <div class="strip">
+    <div><b>{{ summary.saved|num }}</b><span>Rows</span></div>
+    <div><b>{{ summary.classified|num }}</b><span>Classified</span></div>
+    <div class="{{ 'warn' if summary.review else '' }}"><b>{{ summary.review|num }}</b><span>Need review</span></div>
+    <div><b>{{ summary.others|num }}</b><span>In {{ others_label }}</span></div>
+    <div class="{{ 'bad' if summary.errors else '' }}"><b>{{ summary.errors|num }}</b><span>Errors</span></div>
+    {% if summary.spend is not none %}<div><b>{{ summary.spend|num(2) }}</b><span>Total amount</span></div>{% endif %}
+  </div>
+
+  <section class="panel">
+    <div class="panel-head"><h2>{{ profile.level1_name if profile else 'Category' }} breakdown</h2><span class="muted small">Rows with errors are left out</span></div>
+    {% if summary.by_main %}
+    <div class="panel-body">
+      <div class="stackbar" aria-hidden="true">{% for m in summary.by_main %}<i class="{{ m.main|cat_class }}" style="width:{{ (m.pct * 100)|round(2) }}%" title="{{ m.main }}: {{ m.count }} rows"></i>{% endfor %}</div>
+    </div>
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>{{ profile.level1_name if profile else 'Category' }}</th><th class="r">Rows</th><th>Share</th>{% if fr.amount_column %}<th class="r">Amount</th>{% endif %}<th>Confidence</th><th class="r">Need review</th></tr></thead>
+      <tbody>
+      {% for m in summary.by_main %}
+        <tr>
+          <td>
+            <details class="sub"><summary>{{ cat(m.main) }}</summary>
+              <div class="subs">
+                {% for s in m.subs %}<span>{{ s.sub }}</span><span class="r">{{ s.count|num }}</span><span class="r">{{ s.amount|num(2) if fr.amount_column else '' }}</span>{% endfor %}
+                {% if m.subs_more %}<span class="faint">and {{ m.subs_more }} more</span><span></span><span></span>{% endif %}
+              </div>
+            </details>
+          </td>
+          <td class="r">{{ m.count|num }}</td>
+          <td style="min-width:150px"><div class="row"><div class="bar {{ m.main|cat_class }}" style="flex:1"><i style="width:{{ (m.pct * 100)|round(1) }}%"></i></div><span class="small num">{{ m.pct|pct(1) }}</span></div></td>
+          {% if fr.amount_column %}<td class="r">{{ m.amount|num(2) }}</td>{% endif %}
+          <td class="min">{{ meter(m.avg_conf) }} <span class="small muted">{{ m.avg_conf|pct }}</span></td>
+          <td class="r">{{ m.review|num }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}{% call empty('No classified rows yet', 'Rows appear here as they are processed.') %}{% endcall %}{% endif %}
+  </section>
+
+  {% set b = summary.buckets %}{% set tot = b.low + b.fair + b.good + b.high %}
+  {% if tot %}
+  <section class="panel">
+    <div class="panel-head"><h2>Confidence</h2><span class="muted small">Average {{ summary.avg_conf|pct }}, measured on the category choice</span></div>
+    <div class="panel-body stack">
+      <div class="stackbar" aria-hidden="true">
+        {% for k, label in [('low', 'Below 50%'), ('fair', '50 to 70%'), ('good', '70 to 90%'), ('high', '90% and above')] %}{% if b[k] %}<i class="k-{{ k }}" style="width:{{ b[k] * 100 / tot }}%" title="{{ label }}: {{ b[k] }}"></i>{% endif %}{% endfor %}
+      </div>
+      <div class="row small">
+        {% for k, label in [('low', 'Below 50%'), ('fair', '50 to 70%'), ('good', '70 to 90%'), ('high', '90% and above')] %}<span class="cat k-{{ k }}"><i class="dot"></i>{{ label }}: {{ b[k]|num }}</span>{% endfor %}
+      </div>
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="panel" id="rows">
+    <div class="panel-head">
+      <h2>Rows</h2>
+      <form method="get" action="/files/{{ fr.id }}#rows" class="row">
+        <input type="search" name="q" value="{{ filters.q }}" placeholder="Search text" style="width:13rem" aria-label="Search text">
+        <select name="main" aria-label="Category"><option value="">All categories</option>
+          {% for m in summary.by_main %}<option value="{{ m.main }}" {{ 'selected' if filters.main == m.main else '' }}>{{ m.main }}</option>{% endfor %}</select>
+        <label class="row small"><input type="checkbox" name="review" value="1" {{ 'checked' if filters.review else '' }}> Need review</label>
+        <label class="row small"><input type="checkbox" name="errors" value="1" {{ 'checked' if filters.errors else '' }}> Errors</label>
+        <button class="btn sm primary">Apply</button>
+        {% if qs %}<a class="btn sm" href="/files/{{ fr.id }}#rows">Clear</a>{% endif %}
+      </form>
+    </div>
+    {% if rows.total %}
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th class="r">#</th><th>Text</th>{% if fr.amount_column %}<th class="r">Amount</th>{% endif %}<th>{{ profile.level1_name if profile else 'Category' }}</th><th>{{ profile.level2_name if profile else 'Sub-category' }}</th><th>Confidence</th><th></th></tr></thead>
+      <tbody>
+      {% for r in rows['items'] %}
+        <tr class="{{ 'errrow' if r.error else ('flag' if r.needs_review else '') }}">
+          <td class="r faint">{{ r.row_index + 1 }}</td>
+          <td><div class="trunc" title="{{ r.narration }}">{{ r.narration }}</div></td>
+          {% if fr.amount_column %}<td class="r">{{ r.amount|num(2) }}</td>{% endif %}
+          <td>{% if r.error %}<span class="faint">-</span>{% else %}{{ cat(r.main_category) }}{% endif %}</td>
+          <td>{{ r.sub_category or '-' }}</td>
+          <td class="min" title="{{ r.main_top3 }} / {{ r.sub_top3 }}">{% if not r.error %}{{ meter(r.main_confidence) }} <span class="small muted">{{ r.main_confidence|pct }}{% if r.sub_confidence %} / {{ r.sub_confidence|pct }}{% endif %}</span>{% endif %}</td>
+          <td>{% if r.error %}<span class="badge b-bad" title="{{ r.error }}">Error</span>{% elif r.needs_review %}<span class="badge b-warn">Review</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% if rows.pages > 1 %}
+    <div class="pager">
+      <span class="muted small">Page {{ rows.page }} of {{ rows.pages }}, {{ rows.total|num }} rows</span>
+      {% if rows.page > 1 %}<a class="btn sm" href="?{{ qs ~ '&' if qs else '' }}page={{ rows.page - 1 }}#rows">Previous</a>{% endif %}
+      {% if rows.page < rows.pages %}<a class="btn sm" href="?{{ qs ~ '&' if qs else '' }}page={{ rows.page + 1 }}#rows">Next</a>{% endif %}
+    </div>
+    {% endif %}
+    {% else %}{% call empty('No rows match', 'Change or clear the filters.') %}{% endcall %}{% endif %}
+  </section>
+  {% endif %}
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/file_detail.js"></script>{% endblock %}

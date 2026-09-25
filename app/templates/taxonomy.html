@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Taxonomy - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="page-head">
+    <div>
+      <h1>Taxonomy</h1>
+      <p class="lede">The categories rows are classified into. Changes apply to the next file you process; finished files keep the version they used.</p>
+    </div>
+    <form method="get" class="row">
+      <label class="label" for="prof">Dataset type</label>
+      <select id="prof" name="profile" onchange="this.form.submit()">
+        {% for k, label in profiles.items() %}<option value="{{ k }}" {{ 'selected' if k == profile else '' }}>{{ label }}</option>{% endfor %}
+      </select>
+    </form>
+  </div>
+
+  {% if file_error %}<div class="alert error" role="alert"><strong>The taxonomy file on disk could not be read.</strong><span>{{ file_error }}</span><span>Showing the last good version instead.</span></div>{% endif %}
+  {% if not taxonomy %}
+  <div class="alert info"><strong>No taxonomy for this dataset type yet.</strong>
+    <span>One is created automatically the first time you process a file ({% if system2_enabled %}System 2 designs it from your data{% else %}the starter is used{% endif %}). You can also build it here now.</span></div>
+  {% endif %}
+
+  <div id="tax" class="grid side" data-profile="{{ profile }}" data-others="{{ others }}" data-max-main="{{ limits.main }}" data-max-sub="{{ limits.sub }}">
+    <section class="panel">
+      <div class="panel-head">
+        <div class="row"><h2>Categories</h2><span class="badge" id="count-badge"></span>
+          <span class="badge b-warn" id="dirty" hidden>Unsaved changes</span>
+          {% if version %}<span class="badge b-info">Version {{ version }}</span>{% endif %}</div>
+        <div class="row">
+          {% if starter %}<button type="button" class="btn sm" id="use-starter">Load starter</button>{% endif %}
+          <button type="button" class="btn sm" id="import">Import JSON</button>
+          <input type="file" id="import-file" accept=".json,application/json" hidden>
+          {% if taxonomy %}<a class="btn sm" href="/taxonomy/download?profile={{ profile }}">Export JSON</a>{% endif %}
+        </div>
+      </div>
+      <div class="panel-body stack">
+        <div id="tax-msg" class="alert" role="status" hidden></div>
+        <div id="editor" class="tax-grid"></div>
+        <div class="row">
+          <input type="text" id="new-main" placeholder="New {{ prof.level1_name|lower }}" style="max-width:20rem" autocomplete="off">
+          <button type="button" class="btn" id="add-main">Add {{ prof.level1_name|lower }}</button>
+        </div>
+      </div>
+      <div class="panel-body row" style="border-top:1px solid var(--line-2)">
+        <button type="button" class="btn primary" id="save" disabled>Save taxonomy</button>
+        <input type="text" id="note" placeholder="Optional note for the history" style="max-width:22rem" maxlength="300">
+      </div>
+    </section>
+
+    <div class="stack">
+      <section class="panel">
+        <div class="panel-head"><h2>Suggest with System 2</h2></div>
+        <div class="panel-body">
+          {% if not system2_enabled %}
+            <p class="muted">System 2 is switched off (OPENJEV_SYSTEM2_ENABLED). Edit categories by hand instead.</p>
+          {% elif not files %}
+            <p class="muted">Process a file for this dataset type first. System 2 reads its text to propose categories.</p>
+          {% else %}
+            <p class="muted">{{ system2_model }} reads a sample of a processed file and proposes categories.</p><br>
+            <div class="field"><label for="gen-file">Learn from</label>
+              <select id="gen-file">{% for f in files %}<option value="{{ f.id }}">{{ f.filename }} (#{{ f.id }})</option>{% endfor %}</select></div>
+            <div class="field"><label class="label">How to apply</label>
+              <label class="row"><input type="radio" name="gen-mode" value="merge" checked> Keep mine, add only new categories</label>
+              <label class="row"><input type="radio" name="gen-mode" value="replace"> Replace everything with System 2's design</label></div>
+            <div id="gen-error" class="alert error" role="alert" hidden></div>
+            <button type="button" class="btn" id="gen">Suggest categories</button>
+            <p class="hint" id="gen-note" hidden>This can take up to {{ system2_timeout }} seconds.</p>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>Version history</h2></div>
+        <div class="panel-body">
+          {% for v in history %}
+            <div class="ver">
+              <div><strong>Version {{ v.version }}</strong> <span class="badge">{{ v.source }}</span>
+                <div class="small muted">{{ v.created_at|dt }}{% if v.note %}. {{ v.note }}{% endif %}</div></div>
+              {% if not loop.first %}<button type="button" class="btn sm" data-restore="{{ v.id }}">Restore</button>{% endif %}
+            </div>
+          {% else %}<p class="muted">No versions yet. The first save creates version 1.</p>{% endfor %}
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<script type="application/json" id="tax-data">{{ {'taxonomy': taxonomy, 'starter': starter}|tojson }}</script>
+{% endblock %}
+{% block scripts %}<script src="/static/js/taxonomy.js"></script>{% endblock %}

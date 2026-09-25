@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% block title %}Live sentiment (demo) - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="page-head">
+    <div>
+      <h1>Live sentiment <span class="badge b-info">Demo</span></h1>
+      <p class="lede">Scores as you type. Runs in the browser once it confirms the device can keep up; falls back to the server otherwise, then switches back if the browser starts struggling. Same lexicon and algorithm both places.</p>
+    </div>
+    <div class="field" style="min-width:12rem">
+      <label for="mode-select" class="small">Mode</label>
+      <select id="mode-select" aria-label="Scoring mode">
+        <option value="auto" selected>Auto (dynamic hybrid)</option>
+        <option value="local">Force local</option>
+        <option value="remote">Force server</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="grid side">
+    <section class="panel">
+      <div class="panel-body stack">
+        <div class="field">
+          <label for="text">Type something</label>
+          <textarea id="text" rows="5" maxlength="2000" placeholder="e.g. The support team was not very responsive, but the product itself is excellent."></textarea>
+        </div>
+        <div class="row">
+          <span id="pill" class="badge pill-neu">Neutral</span>
+          <span id="engine-badge" class="badge b-info">warming up...</span>
+          <span class="spacer"></span>
+          <span class="small muted num" id="latency"></span>
+        </div>
+        <div class="bar sent-neu" id="score-bar-wrap"><i id="score-bar" style="width:50%"></i></div>
+      </div>
+    </section>
+
+    <div class="stack">
+      <section class="panel">
+        <div class="panel-head"><h2>Why this score</h2></div>
+        <div class="panel-body">
+          <div id="matches" class="chips"><span class="hint">Start typing to see which words contributed.</span></div>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>How the hybrid works</h2></div>
+        <div class="panel-body small muted stack">
+          <p>On load, the browser checks device memory and times a warmup score. Fast enough → the lexicon (~{{ lexicon_kb }} KB) loads in the background and scoring moves fully client-side, no network call per keystroke.</p>
+          <p>Looks constrained, or slows down mid-session → it falls back to this same algorithm running on the server, debounced, with stale in-flight responses cancelled so a slow reply can't overwrite a newer one.</p>
+          <p>Words outside the lexicon are ignored automatically. Negators (not, never, no...) and intensifiers (very, extremely...) within {{ negation_window }} words before a sentiment word flip or scale its contribution — the only "stop words" treated specially.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+<script>window.LIVE_SENTIMENT = {lexiconUrl: {{ lexicon_url|tojson }}, neutralBand: {{ neutral_band }}};</script>
+{% endblock %}
+{% block scripts %}<script src="/static/js/live_sentiment.js"></script>{% endblock %}

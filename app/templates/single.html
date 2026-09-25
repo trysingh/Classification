@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Classify a file - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Classify a file</h1>
+    <p class="lede">Upload one file, say who supplied it, and get a categorised breakdown you can review and download.</p>
+  </div>
+</div>
+
+<div id="form-view" class="grid side" data-require-supplier="{{ 'true' if settings.require_supplier_single else 'false' }}">
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>File</h2></div>
+      <div class="panel-body stack">
+        <label id="drop" class="dropzone" for="file" tabindex="0">
+          <strong>Drop a file here or click to browse</strong>
+          <span>CSV, TSV or Excel, up to {{ settings.max_upload_mb }} MB</span>
+        </label>
+        <input type="file" id="file" accept="{{ settings.allowed_extensions|join(',') }}" hidden>
+        <div id="upload-state" hidden>
+          <div class="row"><span class="spin"></span><span id="upload-label">Uploading...</span></div>
+          <div class="progress"><i id="upload-bar" style="width:0%"></i></div>
+        </div>
+        <div id="file-error" class="alert error" role="alert" hidden></div>
+        <div id="preview" class="stack" hidden>
+          <div class="row"><strong id="pv-name"></strong><span class="muted" id="pv-meta"></span><span class="spacer"></span>
+            <button type="button" class="btn sm" id="pv-clear">Choose another file</button></div>
+          <div class="table-wrap"><table class="data" id="pv-table"></table></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="panel" id="columns" hidden>
+      <div class="panel-head"><h2>Columns</h2></div>
+      <div class="panel-body cols2">
+        <div class="field"><label for="text-col">Text to classify</label><select id="text-col"></select>
+          <span class="hint">The description or narration of each row.</span></div>
+        <div class="field"><label for="amount-col">Amount (optional)</label><select id="amount-col"></select>
+          <span class="hint">Adds spend per category to the analysis.</span></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="stack">
+    <section class="panel">
+      <div class="panel-head"><h2>Supplier</h2><a class="small" href="/suppliers">Manage suppliers</a></div>
+      <div class="panel-body">
+        <div class="field"><label for="sup-name">Supplier name{{ ' (required)' if settings.require_supplier_single else '' }}</label>
+          <input type="text" id="sup-name" list="sup-list" autocomplete="off" placeholder="e.g. Acme Systems Ltd">
+          <datalist id="sup-list">{% for s in suppliers %}<option value="{{ s.name }}">{% endfor %}</datalist>
+          <span class="hint" id="sup-known" hidden>Existing supplier: details filled in.</span></div>
+        <div class="cols2">
+          <div class="field"><label for="sup-code">Supplier code</label><input type="text" id="sup-code"></div>
+          <div class="field"><label for="sup-country">Country</label><input type="text" id="sup-country"></div>
+        </div>
+        <div class="field"><label for="sup-email">Contact email</label><input type="email" id="sup-email"></div>
+        <div class="field"><label for="sup-notes">Notes</label><textarea id="sup-notes" rows="2"></textarea></div>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2>Options</h2></div>
+      <div class="panel-body">
+        <div class="field"><label for="profile">Dataset type</label>
+          <select id="profile">{% for k, label in profiles.items() %}<option value="{{ k }}" {{ 'selected' if k == default_profile else '' }}>{{ label }}</option>{% endfor %}</select>
+          <span class="hint">Decides the prompts and the taxonomy used.</span></div>
+        <div class="field"><label for="backend">Engine</label>
+          <select id="backend">{% for b in backends %}<option value="{{ b.name }}" {{ 'selected' if b.name == default_backend else '' }}>{{ b.label }}{{ '' if b.installed else ' (needs ' ~ b.needs ~ ')' }}</option>{% endfor %}</select></div>
+      </div>
+    </section>
+
+    <div id="submit-error" class="alert error" role="alert" hidden></div>
+    <button type="button" id="go" class="btn primary block" disabled>Classify file</button>
+    <p class="hint" id="go-hint">Upload a file to continue.</p>
+  </div>
+</div>
+
+<section id="run-view" class="panel" hidden>
+  <div class="panel-body run">
+    <div class="run-head"><span class="spin" id="run-spin"></span><h2 id="run-title">Working on your file</h2></div>
+    <p class="muted" id="run-phase">Queued</p>
+    <div class="progress lg indet" id="run-progress"><i id="run-bar" style="width:35%"></i></div>
+    <p class="hint" id="run-count"></p>
+    <p class="hint" id="run-note">You can leave this page. The job keeps running on the server and stays listed under Job history.</p>
+    <div id="run-error" class="alert error" role="alert" hidden></div>
+    <div class="row">
+      <a id="run-open" class="btn primary" href="#" hidden>Open results</a>
+      <a id="run-job" class="btn" href="#">View job</a>
+      <a id="run-again" class="btn" href="/single" hidden>Start over</a>
+    </div>
+  </div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script type="application/json" id="suppliers-data">{{ suppliers|tojson }}</script>
+<script src="/static/js/single.js"></script>
+{% endblock %}

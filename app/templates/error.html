@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Something went wrong - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack" style="max-width:680px">
+  <h1>{{ 'Not found' if status == 404 else 'That did not work' }}</h1>
+  <div class="alert error" role="alert">
+    <strong>{{ message }}</strong>
+    {% if hint %}<span>{{ hint }}</span>{% endif %}
+    {% if detail %}<details><summary>Technical details</summary><pre>{{ detail }}</pre></details>{% endif %}
+    <span class="small">Reference: <span class="mono">{{ request_id }}</span></span>
+  </div>
+  <div class="row"><a class="btn primary" href="/">Back to overview</a><button type="button" class="btn" onclick="history.back()">Go back</button></div>
+</div>
+{% endblock %}

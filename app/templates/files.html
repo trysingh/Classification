@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% from "_macros.html" import badge, empty %}
+{% block title %}Results - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="page-head">
+    <div><h1>Results</h1><p class="lede">One entry per processed file. Open a file for its analysis, or download the JSON.</p></div>
+    <form method="get" class="row">
+      <select name="status" aria-label="Status"><option value="">Any status</option>
+        {% for s in ['completed', 'running', 'queued', 'failed', 'cancelled'] %}<option value="{{ s }}" {{ 'selected' if status == s else '' }}>{{ s|status_label }}</option>{% endfor %}</select>
+      <select name="supplier_id" aria-label="Supplier"><option value="">Any supplier</option>
+        {% for s in suppliers %}<option value="{{ s.id }}" {{ 'selected' if supplier_id == s.id|string else '' }}>{{ s.name }}</option>{% endfor %}</select>
+      <select name="profile" aria-label="Dataset type"><option value="">Any dataset type</option>
+        {% for k, label in profiles.items() %}<option value="{{ k }}" {{ 'selected' if profile == k else '' }}>{{ label }}</option>{% endfor %}</select>
+      <button class="btn primary">Filter</button>
+      {% if status or supplier_id or profile %}<a class="btn" href="/files">Clear</a>{% endif %}
+    </form>
+  </div>
+  <section class="panel">
+    {% if files %}
+    <div class="table-wrap"><table class="data">
+      <thead><tr><th>File</th><th>Supplier</th><th>Dataset type</th><th>Status</th><th class="r">Rows</th><th class="r">Need review</th><th>Finished</th><th></th></tr></thead>
+      <tbody>
+      {% for f in files %}
+        <tr>
+          <td><a href="/files/{{ f.id }}">{{ f.filename }}</a></td>
+          <td>{{ f.supplier.name if f.supplier else '-' }}</td>
+          <td>{{ settings.profiles[f.profile].label if f.profile in settings.profiles else f.profile }}</td>
+          <td>{{ badge(f.status) }}</td>
+          <td class="r">{{ f.processed_rows|num }}{% if f.total_rows and f.total_rows != f.processed_rows %} / {{ f.total_rows|num }}{% endif %}</td>
+          <td class="r">{{ f.review_rows|num }}</td>
+          <td class="min">{{ f.finished_at|dt }}</td>
+          <td class="r min">
+            <a class="btn sm" href="/files/{{ f.id }}">Open</a>
+            {% if f.status == 'completed' %}<a class="btn sm" href="/files/{{ f.id }}/download.json">JSON</a>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table></div>
+    {% else %}
+      {% call empty('No results match', 'Process a file, or clear the filters.') %}<a class="btn primary" href="/single">Classify a file</a>{% endcall %}
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
