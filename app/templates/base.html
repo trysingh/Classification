@@ -11,7 +11,7 @@
 {% set path = request.url.path %}
 {% set links = [('/', 'Overview'), ('/single', 'Classify a file'), ('/batch', 'Batch from folder'), ('/jobs', 'Job history'),
                 ('/files', 'Results'), ('/taxonomy', 'Taxonomy'), ('/suppliers', 'Suppliers'), ('/diagnostics', 'Diagnostics'),
-                ('/live', 'Live sentiment')] %}
+                ('/live', 'Live sentiment'), ('/decide/dino', 'Quick decisions (Dino)')] %}
 <div class="shell">
   <aside class="rail" id="rail">
     <a class="brand" href="/">{{ app_name }}<small>Classification workbench</small></a>

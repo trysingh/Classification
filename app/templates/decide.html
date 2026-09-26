@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+{% block title %}{{ prof.label }} - {{ app_name }}{% endblock %}
+{% block content %}
+<style>
+  #action-glyphs .glyph-bg {
+    fill: var(--panel-bg, #f7f7f7);
+    stroke: var(--line, #ddd);
+    stroke-width: 1.5;
+    transition: fill .15s ease, stroke .15s ease;
+  }
+
+  #action-glyphs .glyph-icon {
+    stroke: var(--muted, #999);
+    transition: stroke .15s ease;
+  }
+
+  #action-glyphs .glyph-label {
+    font: 600 11px/1 monospace;
+    fill: var(--muted, #999);
+    transition: fill .15s ease;
+  }
+
+  #action-glyphs .glyph.active .glyph-bg {
+    fill: var(--brand, #2a6);
+    stroke: var(--brand, #2a6);
+  }
+
+  #action-glyphs .glyph.active .glyph-icon {
+    stroke: #fff;
+  }
+
+  #action-glyphs .glyph.active .glyph-label {
+    fill: #fff;
+  }
+
+  #conf-track {
+    height: 8px;
+    border-radius: 4px;
+    background: var(--line, #e5e5e5);
+    overflow: hidden;
+    flex: 1;
+  }
+
+  #conf-fill {
+    height: 100%;
+    width: 0%;
+    background: var(--brand, #2a6);
+    transition: width .12s linear, background-color .12s linear;
+  }
+
+  #conf-fill.ambiguous {
+    background: var(--warn, #c93);
+  }
+
+  #src-badge.escalated {
+    background: var(--warn, #c93);
+    color: #fff;
+    border-color: var(--warn, #c93);
+  }
+
+  #ambiguous-badge {
+    background: var(--warn, #c93);
+    color: #fff;
+    border-color: var(--warn, #c93);
+  }
+</style>
+<div class="stack">
+  <div class="page-head">
+    <div>
+      <h1>{{ prof.label }} <span class="badge b-info">Demo</span></h1>
+      <p class="lede">A reflex decides every frame, offline, sub-millisecond -- the same decide() logic runs in this
+        browser and on the server. It only asks a System-1 model when the reflex itself flags a call ambiguous, and
+        never waits on the reply before acting.</p>
+    </div>
+  </div>
+
+  <div class="grid side">
+    <section class="panel">
+      <div class="panel-body stack">
+        <canvas id="stage" width="600" height="150"
+          style="max-width:100%;width:100%;border:1px solid var(--line);border-radius:var(--r-s);background:#fff"></canvas>
+        <div class="row">
+          <button type="button" class="btn primary" id="start">Start</button>
+          <label for="driver-select" class="small muted">Driver:</label>
+          <select id="driver-select" class="input" style="padding:.2rem .4rem;font-size:12px;">
+            <option value="frontend" selected>Frontend (Local Reflex)</option>
+            <option value="backend">Backend (/api/decide)</option>
+          </select>
+          <span class="spacer"></span>
+          <span class="small muted num" id="hud">Press Start</span>
+        </div>
+
+        <div class="stack" id="decision-panel" style="gap:.6rem">
+          <svg id="action-glyphs" viewBox="0 0 300 90" width="100%" height="90" style="max-width:280px">
+            <g class="glyph" data-action="Run">
+              <rect x="10" y="10" width="70" height="70" rx="10" class="glyph-bg" />
+              <path d="M22 55 L40 38 L52 48 L70 25" class="glyph-icon" stroke-width="4" fill="none"
+                stroke-linecap="round" stroke-linejoin="round" />
+              <text x="45" y="88" text-anchor="middle" class="glyph-label">RUN</text>
+            </g>
+            <g class="glyph" data-action="Jump" transform="translate(110,0)">
+              <rect x="10" y="10" width="70" height="70" rx="10" class="glyph-bg" />
+              <path d="M45 65 L45 25 M31 39 L45 25 L59 39" class="glyph-icon" stroke-width="4" fill="none"
+                stroke-linecap="round" stroke-linejoin="round" />
+              <text x="45" y="88" text-anchor="middle" class="glyph-label">JUMP</text>
+            </g>
+            <g class="glyph" data-action="Duck" transform="translate(220,0)">
+              <rect x="10" y="10" width="70" height="70" rx="10" class="glyph-bg" />
+              <path d="M45 22 L45 62 M31 48 L45 62 L59 48" class="glyph-icon" stroke-width="4" fill="none"
+                stroke-linecap="round" stroke-linejoin="round" />
+              <text x="45" y="88" text-anchor="middle" class="glyph-label">DUCK</text>
+            </g>
+          </svg>
+
+          <div class="row" style="align-items:center;gap:.6rem">
+            <span class="small muted" style="min-width:6rem">confidence</span>
+            <div id="conf-track">
+              <div id="conf-fill"></div>
+            </div>
+            <span class="small mono" id="conf-num">0.00</span>
+          </div>
+
+          <div class="row" style="gap:.5rem;flex-wrap:wrap;align-items:center">
+            <span class="badge" id="src-badge">system-1 (reflex)</span>
+            <span class="badge" id="ambiguous-badge" hidden>ambiguous → escalated to system-2</span>
+            <span class="small muted mono" id="trigger-readout"></span>
+          </div>
+
+          <div class="row" style="gap:.5rem;flex-wrap:wrap;align-items:center">
+            <div class="stack" style="gap:.35rem">
+              <span class="small muted">reaction windows (newest first)</span>
+              <ol id="window-log" class="small mono"
+                style="list-style:none;margin:0;padding:.35rem .5rem;max-height:9rem;overflow-y:auto;border:1px solid var(--line);border-radius:var(--r-s)">
+              </ol>
+            </div>
+            <span class="small mono" id="window-readout">–</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="stack">
+      <section class="panel">
+        <div class="panel-head">
+          <h2>How this works</h2>
+        </div>
+        <div class="panel-body small muted stack">
+          <p>Every animation frame, a deterministic reflex reads the game state and picks {{
+            prof.seed_taxonomy.keys()|join(' / ') }} -- no network call, so it plays fine offline.</p>
+          <p>When the reflex flags a call ambiguous (the obstacle sits right at the edge of the jump window), it also
+            asks the server -- throttled, cancelled if superseded -- for a second opinion from a configured model. The
+            server review never overrides the reflex mid-air; it only nudges the reflex's own threshold for next time.
+          </p>
+          <p>Escalation model for this mode: <code class="mono">{{ prof.backend }}</code>, changeable in config.py, an
+            env var, or per request -- the reflex layer itself never depends on it.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+{% for s in prof.game_scripts %}
+<script src="/static/js/{{ s }}"></script>
+{% endfor %}
+<script src="/static/js/decision_engine.js"></script>
+<script>
+  function pickField(r, field, dflt) {
+    if (r && r[field] !== undefined && r[field] !== null) return r[field];
+    if (r && r.reflex && r.reflex[field] !== undefined && r.reflex[field] !== null) return r.reflex[field];
+    return dflt;
+  }
+
+  function updateDecisionPanel(r, src) {
+    const action = pickField(r, 'action', 'Run');
+    
+    const confidence = Number(pickField(r, 'confidence', 0)) || 0;
+    const ambiguous = !!pickField(r, 'ambiguous', false);
+    const triggerPx = pickField(r, 'trigger_px', null);
+    const escalated = src === 'server';
+
+    // if (ambiguous) {
+    //   console.warn('[AMBIGUOUS DECISION DETECTED]', {
+    //     source: src,
+    //     action: action,
+    //     confidence: confidence,
+    //     triggerPx: triggerPx,
+    //     // Shows the full reflex metadata that produced the ambiguity
+    //     rawDecision: r,
+    //     currentDinoState: DinoMini.getState()
+    //   });
+    // }
+
+
+    document.querySelectorAll('#action-glyphs .glyph').forEach((g) => {
+      g.classList.toggle('active', g.dataset.action === action);
+    });
+
+    const fill = document.getElementById('conf-fill');
+    fill.style.width = (Math.max(0, Math.min(1, confidence)) * 100).toFixed(0) + '%';
+    fill.classList.toggle('ambiguous', ambiguous);
+    document.getElementById('conf-num').textContent = confidence.toFixed(2);
+
+    const srcBadge = document.getElementById('src-badge');
+    srcBadge.textContent = escalated ? 'system-2 (server)' : 'system-1 (reflex)';
+    srcBadge.classList.toggle('escalated', escalated);
+
+    document.getElementById('ambiguous-badge').hidden = !ambiguous;
+    document.getElementById('trigger-readout').textContent =
+      triggerPx != null ? `trigger @ ${Math.round(triggerPx)}px` : '';
+  }
+
+  // Reaction window = time from when an obstacle first exists (spawnedAt) to the first frame
+  // its x-range reaches the player (arrivedAt) -- the real deadline for a correct action to
+  // already be in effect, per-obstacle, from the game's own clock (see getState() in
+  // dino_mini_game.js). Polled independently of onDecision: it's ground truth about the game,
+  // not a report of what the reflex/server actually chose.
+  const MAX_LOG_ROWS = 30; // mirrors dino_mini_game.js's own MAX_REACTION_LOG cap
+  function prependReactionRow(entry) {
+    const list = document.getElementById('window-log');
+    const li = document.createElement('li');
+    li.textContent = `${entry.ms}ms · ${entry.type}`;
+    list.insertBefore(li, list.firstChild);
+    while (list.children.length > MAX_LOG_ROWS) list.removeChild(list.lastChild);
+  }
+/*
+  document.getElementById('start').addEventListener('click', async () => {
+    const btn = document.getElementById('start');
+    const driverSelect = document.getElementById('driver-select');
+    const modeDriver = driverSelect ? driverSelect.value : 'frontend';
+    btn.disabled = true; btn.textContent = 'Running';
+    // NOTE: DinoMini.start() is dino-specific -- a second mode needs its own start-the-canvas
+    // call here too (or, better, have that mode's adapter factory start its own game internally
+    // and drop this line). Not generalized further since no second mode exists yet to test against.
+    DinoMini.start(document.getElementById('stage'));
+    // requestAnimationFrame(pollReactionWindow); 
+    DinoMini.onReaction(prependReactionRow);
+    const adapter = await window['{{ prof.adapter_factory }}']();
+    DecisionEngine.registerMode('{{ mode }}', adapter);
+    DecisionEngine.start('{{ mode }}', {
+      onDecision: (r, src) => {
+        const conf = r.confidence !== undefined ? r.confidence : (r.reflex ? r.reflex.confidence : 0);
+        document.getElementById('hud').textContent = src + '  action=' + r.action + '  conf=' + Number(conf || 0).toFixed(2);
+        updateDecisionPanel(r, src);
+      }
+    });
+    // If "backend" is selected, configure DecisionEngine to force server evaluation
+    const engineConfig = {
+      forceServer: (modeDriver === 'backend'),
+      onDecision: (r, src) => {
+        const conf = r.confidence !== undefined ? r.confidence : (r.reflex ? r.reflex.confidence : 0);
+        document.getElementById('hud').textContent = 
+          `${src}  action=${r.action}  conf=${Number(conf || 0).toFixed(2)}`;
+        updateDecisionPanel(r, src);
+      }
+    };
+
+    DecisionEngine.start('{{ mode }}', engineConfig);
+
+  });
+*/
+  document.getElementById('start').addEventListener('click', async () => {
+    const btn = document.getElementById('start');
+    const driverSelect = document.getElementById('driver-select');
+    const modeDriver = driverSelect ? driverSelect.value : 'frontend';
+
+    btn.disabled = true;
+    btn.textContent = 'Running';
+    if (driverSelect) driverSelect.disabled = true;
+
+    DinoMini.start(document.getElementById('stage'));
+    DinoMini.onReaction(prependReactionRow);
+
+    const rawAdapter = await window['{{ prof.adapter_factory }}']();
+
+    // In frontend mode, suppress ambiguity so DecisionEngine does not send background POST requests
+    const adapter = {
+      ...rawAdapter,
+      decide: (state) => {
+        const res = rawAdapter.decide(state);
+        if (modeDriver === 'frontend') {
+          return { ...res, ambiguous: false };
+        }
+        return res;
+      }
+    };
+
+    DecisionEngine.registerMode('{{ mode }}', adapter);
+
+    // Single start call with the desired configuration
+    DecisionEngine.start('{{ mode }}', {
+      forceServer: (modeDriver === 'backend'),
+      onDecision: (r, src) => {
+        const conf = r.confidence !== undefined ? r.confidence : (r.reflex ? r.reflex.confidence : 0);
+        document.getElementById('hud').textContent = 
+          `${src}  action=${r.action}  conf=${Number(conf || 0).toFixed(2)}`;
+        updateDecisionPanel(r, src);
+      }
+    });
+  });
+
+
+
+</script>
+{% endblock %}

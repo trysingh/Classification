@@ -27,7 +27,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from app.core.errors import ConfigError
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-BackendName = Literal["causal_lm", "laya", "keyword", "lexicon_sentiment"]
+BackendName = Literal["causal_lm", "laya", "keyword", "lexicon_sentiment", "reflex_decision"]
 
 
 class ProfileConfig(BaseModel):
@@ -51,6 +51,20 @@ class ProfileConfig(BaseModel):
     # backend and the browser port can never tune it differently.
     lexicon_asset: Optional[str] = None
     neutral_band: float = 0.15                    # |avg score| at or below this reads as "Neutral"
+    # reflex/decision profiles only (backend="reflex_decision" escalation modes, e.g. "dino"):
+    # relative path under /static/ to the shared reflex-rules JSON, read identically by
+    # ReflexDecisionBackend (server) and the matching JS adapter (client) -- same
+    # never-disagree guarantee lexicon_asset gives the sentiment demo, for state instead of text.
+    # None = ReflexDecisionBackend falls back to the static/data/<mode>_reflex_rules.json naming
+    # convention (what dino_adapter.js's hardcoded fetch path also assumes).
+    reflex_asset: Optional[str] = None
+    # /decide/<mode> page only (not in the original patch notes -- added so the promoted Jinja
+    # template stays mode-generic too, matching "a new mode needs no engine change": which JS
+    # files the page includes (under /static/js/, in order) and the global factory function
+    # name it calls to build the {reflex, applyAction, actions} adapter. Empty adapter_factory
+    # means this profile isn't a playable /decide page.
+    game_scripts: list[str] = []
+    adapter_factory: str = ""
     # Per-profile overrides (None = inherit the global value)
     max_main_categories: Optional[int] = None
     max_sub_categories: Optional[int] = None
@@ -133,6 +147,27 @@ DEFAULT_PROFILES: dict[str, ProfileConfig] = {
         lexicon_asset="data/live_sentiment_lexicon.json",
         neutral_band=0.15,
         seed_taxonomy={"Positive": [], "Negative": [], "Neutral": []},
+    ),
+    "dino": ProfileConfig(
+        # NOT run through HierarchicalClassifier / the batch pipeline -- no text column makes
+        # sense for a per-tick game state. Exists purely to hand /decide/dino its action set
+        # (seed_taxonomy keys double as labels), reflex_asset, and default escalation backend.
+        label="Chrome Dino (reflex + System-1 escalation demo)",
+        description="real-time obstacle-avoidance decisions for an offline endless-runner",
+        item_name="game tick",
+        level1_name="Action",
+        backend="laya",                          # ESCALATION backend only -- the reflex layer
+                                                   # always runs regardless of this. Swap to
+                                                   # "causal_lm" for better-but-slower quality,
+                                                   # or override per-request (see decide.py).
+        reflex_asset="data/dino_reflex_rules.json",
+        game_scripts=["dino_mini_game.js", "dino_adapter.js"],
+        adapter_factory="createMiniAdapter",
+        main_category_question=(
+            "An obstacle is approaching in a real-time endless-runner game. Given its type, "
+            "distance, and the player's current speed, which single action should the player "
+            "take right now?"),
+        seed_taxonomy={"Jump": [], "Duck": [], "Run": []},   # doubles as the action label set
     ),
 }
 
@@ -271,8 +306,9 @@ class AppSettings(BaseSettings):
 
     def backend_for(self, key: str, override: str | None = None) -> str:
         chosen = override or self.profile(key).backend or self.classifier_backend
-        if chosen not in ("causal_lm", "laya", "keyword", "lexicon_sentiment"):
-            raise ConfigError(f"Unknown engine '{chosen}'.", hint="Use causal_lm, laya, keyword or lexicon_sentiment.")
+        if chosen not in ("causal_lm", "laya", "keyword", "lexicon_sentiment", "reflex_decision"):
+            raise ConfigError(f"Unknown engine '{chosen}'.",
+                              hint="Use causal_lm, laya, keyword, lexicon_sentiment or reflex_decision.")
         return chosen
 
     def prompt(self, key: str, name: str, **kw: Any) -> str:

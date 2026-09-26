@@ -21,7 +21,7 @@ from sqlalchemy import select
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.config import AppSettings, settings as default_settings
-from app.controllers import batch, dashboard, files, jobs, live, single, suppliers, system, taxonomy
+from app.controllers import batch, dashboard, decide, files, jobs, live, single, suppliers, system, taxonomy
 from app.core.database import init_db
 from app.core.errors import AppError
 from app.core.logging_setup import request_id_var, setup_logging
@@ -132,6 +132,6 @@ def create_app(settings: AppSettings | None = None) -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(APP_DIR / "static")), name="static")
     _install_middleware(app)
     _install_error_handlers(app)
-    for module in (dashboard, single, batch, jobs, files, taxonomy, suppliers, live, system):
+    for module in (dashboard, single, batch, jobs, files, taxonomy, suppliers, live, decide, system):
         app.include_router(module.router)
     return app

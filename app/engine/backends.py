@@ -271,6 +271,93 @@ class LexiconSentimentBackend(ChoiceBackend):
         return f"Driven by '{top['word']}'"
 
 
+class ReflexDecisionBackend(ChoiceBackend):
+    """Deterministic, sub-millisecond action chooser for real-time twitch games (see /decide).
+    Same shared-asset pattern as LexiconSentimentBackend: this class and the mode's JS adapter
+    (static/js/dino_adapter.js etc.) read the SAME rules JSON
+    (app/static/data/<mode>_reflex_rules.json by convention, or the profile's reflex_asset if
+    set), so browser-side control and this server-side endpoint never disagree -- only which
+    one drives the actual keypresses differs.
+
+    Unlike LexiconSentimentBackend this backend is state-driven, not text-driven: choose()'s
+    `context` is a JSON-encoded game state, and `labels` is the mode's action set. No text is
+    actually read for the decision -- context/labels are accepted for ChoiceBackend /
+    HierarchicalClassifier interface compatibility; the real per-tick entry point is decide().
+
+    decide() deliberately takes no `calibration` argument, unlike its JS twin: the client-side
+    lead_multiplier nudging in decision_engine.js's calibrate() is ephemeral and browser-local
+    by design (see that file's docstring), so a server review always answers against the un-
+    nudged baseline rules file, never a copy that's drifted from what's on disk.
+    """
+
+    name = "reflex_decision"
+    DATA_DIR = Path(__file__).resolve().parent.parent / "static" / "data"
+
+    def __init__(self, settings, mode: str = "dino"):
+        # settings.profile() raises a clear ConfigError for an unknown mode before we even get
+        # to file I/O, and profile.reflex_asset -- when set -- takes precedence over the plain
+        # <mode>_reflex_rules.json naming convention dino_adapter.js's fetch() also assumes.
+        prof = settings.profile(mode)
+        path = (Path(__file__).resolve().parent.parent / "static" / prof.reflex_asset) if prof.reflex_asset \
+            else self.DATA_DIR / f"{mode}_reflex_rules.json"
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            raise BackendError(f"The '{mode}' reflex rules file is missing or invalid.",
+                               hint=f"Check {path}.", detail=str(e))
+        self.mode = mode
+        self.actions: list[str] = data["actions"]
+        self.physics: dict = data.get("physics", {})
+        self.obstacle_profiles: dict = data.get("obstacle_profiles", {})
+        self.lead_multiplier: float = data.get("thresholds", {}).get("lead_multiplier", 1.15)
+        self.ambiguous_band: float = data.get("thresholds", {}).get("ambiguous_margin_px", 12)
+        log.info("Loaded reflex rules for mode=%s: %d actions, %d obstacle profiles",
+                 mode, len(self.actions), len(self.obstacle_profiles))
+        print("Loaded reflex rules for mode=%s: %d actions, %d obstacle profiles" %
+              (mode, len(self.actions), len(self.obstacle_profiles)))
+
+    def _airtime_frames(self) -> float:
+        g = self.physics.get("GRAVITY", 0.6)
+        v = self.physics.get("INITIAL_JUMP_VELOCITY", 12)
+        return 2.0 * v / g if g else 40.0
+
+    def decide(self, state: dict) -> dict:
+        """The actual reflex: identical logic to dino_adapter.js's decide() for this mode.
+        state: {"obstacle_type": str|None, "obstacle_x": float, "obstacle_y": float, "speed": float}
+        Returns {"action", "confidence", "ambiguous", "trigger_px"}; ambiguous=True is the
+        signal the caller (decide.py) should escalate to a System-1 model via choose()."""
+        obstacle_type = state.get("obstacle_type")
+        if not obstacle_type:
+            return {"action": "Run", "confidence": 1.0, "ambiguous": False, "trigger_px": None}
+        speed = max(state.get("speed", self.physics.get("SPEED", 6)), 0.1)
+        trigger_px = speed * self._airtime_frames() * self.lead_multiplier
+        dist = state.get("obstacle_x", 9999)
+        if dist > trigger_px + self.ambiguous_band:
+            return {"action": "Run", "confidence": 1.0, "ambiguous": False, "trigger_px": trigger_px}
+        profile = self.obstacle_profiles.get(obstacle_type, {})
+        base_action = profile.get("action", "Jump")
+        margin = trigger_px - dist
+        ambiguous = abs(margin) <= self.ambiguous_band
+        confidence = 0.5 if ambiguous else round(min(abs(margin) / ((self.ambiguous_band * 2) or 1e-9), 1.0), 4)
+        return {"action": base_action, "confidence": confidence, "ambiguous": ambiguous, "trigger_px": trigger_px}
+
+    def choose(self, context, question, labels, *, debias=1, hints=None) -> dict:
+        try:
+            state = json.loads(context)
+        except (TypeError, json.JSONDecodeError):
+            state = {}
+        result = self.decide(state)
+        action = result["action"] if result["action"] in labels else labels[0]
+        conf = result["confidence"]
+        rest = (1.0 - conf) / max(1, len(labels) - 1)
+        probs = {label: (conf if label == action else rest) for label in labels}
+        total = sum(probs.values()) or 1.0
+        return {"choice": action, "probabilities": {label: round(p / total, 4) for label, p in probs.items()}}
+
+    def generate_label(self, narration: str, prompt: str) -> str:
+        return "Reflex decision (no generative label)"
+
+
 class EngineRegistry:
     """Loads each backend once (lazily, thread-safe) and hands the shared instance to every job."""
 
@@ -296,21 +383,29 @@ class EngineRegistry:
                 return KeywordBackend(s)
             if name == "lexicon_sentiment":
                 return LexiconSentimentBackend(s)
+            if name == "reflex_decision" or name.startswith("reflex_decision:"):
+                mode = name.split(":", 1)[1] if ":" in name else "dino"
+                return ReflexDecisionBackend(s, mode=mode)
         except ImportError as e:
             need = {"causal_lm": "pip install torch transformers", "laya": "pip install laya"}.get(name, "")
             raise BackendError(f"The '{name}' engine needs the package '{e.name}', which is not installed.",
                                hint=f"{need}. Or pick another engine (e.g. keyword) for this run.", detail=str(e))
+        except BackendError:
+            raise   # already specific (e.g. a missing/invalid rules or lexicon file) -- don't bury it below
         except Exception as e:  # model download / load failures
             raise BackendError(f"The '{name}' engine could not be loaded.",
                                hint="Check the model name, disk space and network access to the model hub.",
                                detail=f"{type(e).__name__}: {e}")
-        raise BackendError(f"Unknown engine '{name}'.", hint="Use causal_lm, laya, keyword or lexicon_sentiment.")
+        raise BackendError(f"Unknown engine '{name}'.",
+                           hint="Use causal_lm, laya, keyword, lexicon_sentiment or reflex_decision.")
 
     def availability(self) -> list[dict]:
         have = lambda m: importlib.util.find_spec(m) is not None
         rows = [("causal_lm", "Qwen logit read-off", have("torch") and have("transformers"), "torch, transformers"),
                 ("laya", "Laya", have("laya"), "laya"),
                 ("keyword", "Keyword baseline (no ML)", True, "nothing"),
-                ("lexicon_sentiment", "Lexicon sentiment (live)", True, "nothing")]
-        return [{"name": n, "label": lbl, "installed": ok, "loaded": n in self._cache, "needs": need}
+                ("lexicon_sentiment", "Lexicon sentiment (live)", True, "nothing"),
+                ("reflex_decision", "Reflex decision rules (per game mode)", True, "nothing")]
+        loaded = lambda n: any(k == n or k.startswith(n + ":") for k in self._cache)
+        return [{"name": n, "label": lbl, "installed": ok, "loaded": loaded(n), "needs": need}
                 for n, lbl, ok, need in rows]
