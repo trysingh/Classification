@@ -185,3 +185,240 @@ details.sub[open]>summary::before{content:"-"}
 .sent-pos i{background:var(--ok)}
 .sent-neg i{background:var(--bad)}
 .sent-neu i{background:var(--ink-3)}
+
+/* ---- live sentiment v2: phrase/emoji chip tags ---- */
+.chip .tag{font-size:.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.03em;color:var(--ink-3);background:var(--line-2);border-radius:3px;padding:0 .3rem;margin-right:.3rem}
+
+/* ---- Collapsible Rail Extensions ---- */
+:root {
+  --rail-width: 232px;
+  --rail-collapsed-width: 64px;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  min-height: 100vh;
+  transition: grid-template-columns 0.2s ease;
+}
+
+.rail {
+  padding: 1.25rem 0.65rem;
+  transition: width 0.2s ease;
+}
+
+.rail-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.25rem 0.4rem;
+}
+
+.brand-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-s);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  flex: none;
+}
+
+.collapse-toggle {
+  background: transparent;
+  border: 0;
+  color: var(--rail-dim);
+  cursor: pointer;
+  padding: 0.4rem;
+  border-radius: var(--r-s);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.collapse-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.55rem 0.6rem;
+}
+
+.ico.nav-ico {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex: none;
+}
+
+/* Collapsed State */
+/* ---- Collapsible Rail Extensions ---- */
+:root {
+  --rail-width: 232px;
+  --rail-collapsed-width: 60px;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  min-height: 100vh;
+  transition: grid-template-columns 0.2s ease;
+}
+
+.rail {
+  padding: 1.25rem 0.5rem;
+  overflow-x: hidden;
+}
+
+.rail-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0 0.4rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.25rem 0;
+  min-width: 0;
+}
+
+.brand-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--r-s);
+  background: var(--accent);
+  color: #fff;
+  font-weight: 700;
+  font-size: 0.95rem;
+  flex: 0 0 28px;
+}
+
+.brand-text {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.collapse-toggle {
+  background: transparent;
+  border: 0;
+  color: var(--rail-dim);
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: var(--r-s);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 24px;
+}
+.collapse-toggle:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+/* Force standard icon constraints */
+.ico.nav-ico {
+  width: 18px !important;
+  height: 18px !important;
+  min-width: 18px !important;
+  min-height: 18px !important;
+  max-width: 18px !important;
+  max-height: 18px !important;
+  stroke-width: 2;
+  flex: 0 0 18px;
+  display: block;
+}
+
+/* Link items in single horizontal row */
+.nav a {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 0.75rem;
+  padding: 0.45rem 0.6rem;
+  white-space: nowrap;
+  min-height: 34px;
+}
+
+.nav-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- Collapsed State ---- */
+/* Update the .shell rule to drop the CSS grid transition */
+.shell {
+  display: grid;
+  grid-template-columns: var(--rail-width) minmax(0, 1fr);
+  min-height: 100vh;
+}
+
+/* Update selector targeting to body.rail-collapsed */
+body.rail-collapsed .shell {
+  grid-template-columns: var(--rail-collapsed-width) minmax(0, 1fr);
+}
+
+body.rail-collapsed .rail {
+  padding: 1.25rem 0.35rem;
+}
+
+body.rail-collapsed .brand-text,
+body.rail-collapsed .nav-text,
+body.rail-collapsed .nav-label,
+body.rail-collapsed .pill-text {
+  display: none !important;
+}
+
+body.rail-collapsed .rail-top {
+  flex-direction: column-reverse;
+  align-items: center;
+  padding: 0;
+  gap: 0.75rem;
+}
+
+body.rail-collapsed .brand {
+  justify-content: center;
+  padding: 0;
+}
+
+body.rail-collapsed .collapse-toggle svg {
+  transform: rotate(180deg);
+}
+
+/* Keep icons strictly centered without shifting borders */
+body.rail-collapsed .nav a {
+  justify-content: center;
+  padding: 0.55rem 0;
+  border-left: 0;
+  border-bottom: 2px solid transparent;
+}
+
+body.rail-collapsed .nav a.on {
+  border-left-color: transparent;
+  border-bottom-color: #7be0b6;
+}
+
+body.rail-collapsed .pill {
+  justify-content: center;
+  padding: 0.55rem 0;
+}

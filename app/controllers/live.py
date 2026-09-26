@@ -35,6 +35,7 @@ def score(body: LiveIn, registry=Depends(get_registry)):
     """The server-side half of the hybrid. Same algorithm, same lexicon file, as the browser port."""
     backend = registry.get("lexicon_sentiment")
     avg, matches = backend.score(body.text)
-    matches.sort(key=lambda m: -abs(m["contribution"]))
-    return {"label": backend.label_for(avg), "score": avg, "confidence": backend.confidence_for(avg),
-            "matches": matches[:12], "mode": "server"}
+    matches.sort(key=lambda m: -abs(m["contribution"] * m["weight"]))
+    signals = backend.signal_summary(matches)
+    return {"label": backend.label_for(avg), "score": avg, "confidence": backend.confidence_for(avg, matches),
+            "matches": matches[:12], "mode": "server", **signals}

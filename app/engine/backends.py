@@ -169,15 +169,24 @@ class KeywordBackend(ChoiceBackend):
 
 
 class LexiconSentimentBackend(ChoiceBackend):
-    """Pure-Python valence lexicon scorer for the live-sentiment demo (see /live): no model, no
-    network, sub-millisecond. Words absent from the lexicon contribute nothing -- that alone is
-    how ordinary stop words get ignored. Negators ('not', 'never'...) and intensifiers ('very',
-    'extremely'...) are the deliberate exception: each flips or scales a sentiment word within
-    `negation_window` tokens after it.
+    """Valence-lexicon scorer for the live-sentiment demo (see /live): no model, no network,
+    still sub-millisecond even with v2's extra passes. static/js/live_sentiment.js is a
+    line-for-line port of the methods below, reading the SAME lexicon file
+    (app/static/data/live_sentiment_lexicon.json), so browser-side and server-side scoring
+    never disagree -- only which one runs for a given keystroke changes.
 
-    static/js/live_sentiment.js is a line-for-line port of score() below, reading the SAME
-    lexicon file (app/static/data/live_sentiment_lexicon.json), so browser-side and server-side
-    scoring never disagree -- only which one runs for a given keystroke changes.
+    v2 adds four things a single word-by-word pass can't do:
+      - phrases: literal multi-word overrides ("not bad", "waste of money"...), matched greedily
+        (longest first) before word-level scoring, so a phrase's own words aren't ALSO scored
+        individually and double-counted.
+      - clause splitting: text is cut first on sentence punctuation, then within each sentence on
+        a contrast word (but/however/...). This is what actually fixes negation windows bleeding
+        across sentences, and lets the clause AFTER a contrast word outweigh the one before it
+        ("great UI but slow app" leans negative, not a wash).
+      - diminishers, split out from intensifiers (values <1 moved here) so the two concepts don't
+        share one dict.
+      - emojis and a capped CAPS/punctuation emphasis multiplier, both computed from the raw text
+        rather than the tokenizer (which only ever sees `[a-z']+`).
 
     score()/label_for()/confidence_for() are the direct API the /live demo endpoint calls.
     choose() adapts the same scoring to the generic ChoiceBackend contract, so this backend also
@@ -187,6 +196,9 @@ class LexiconSentimentBackend(ChoiceBackend):
     name = "lexicon_sentiment"
     ASSET_PATH = Path(__file__).resolve().parent.parent / "static" / "data" / "live_sentiment_lexicon.json"
     _TOKEN = re.compile(r"[a-z']+")
+    _SENTENCE_SPLIT = re.compile(r"[.!?]+")
+    _CAPS_WORD = re.compile(r"\b[A-Z]{3,}\b")
+    _EXCLAIM = re.compile(r"[!?]{1,}$")
 
     def __init__(self, settings):
         try:
@@ -195,23 +207,83 @@ class LexiconSentimentBackend(ChoiceBackend):
             raise BackendError("The sentiment lexicon file is missing or invalid.",
                                hint=f"Check {self.ASSET_PATH}.", detail=str(e))
         self.words: dict[str, float] = data["words"]
+        # Cheap coverage extension: "crashing"/"crashes" hit the same entry as "crash" without
+        # listing every inflection by hand. Reuses the suffix-stripper KeywordBackend already
+        # uses elsewhere in this file -- same tradeoff (single pass, no recursion), not a real
+        # stemmer. First word to reach a given stem wins if two collide.
+        self._stem_index: dict[str, float] = {}
+        for w, s in self.words.items():
+            self._stem_index.setdefault(_stem(w), s)
+        self.phrases: list[tuple[list[str], float]] = sorted(
+            ((p.split(), s) for p, s in data.get("phrases", {}).items()), key=lambda ps: -len(ps[0]))
         self.negators: set[str] = set(data["negators"])
         self.intensifiers: dict[str, float] = data["intensifiers"]
-        self.window: int = data.get("meta", {}).get("negation_window", 3)
+        self.diminishers: dict[str, float] = data.get("diminishers", {})
+        self.emojis: dict[str, float] = data.get("emojis", {})
+        meta = data.get("meta", {})
+        self.window: int = meta.get("negation_window", 3)
+        self.scope_breakers: set[str] = set(meta.get("scope_breakers", []))
+        self.cap_boost_max: float = meta.get("cap_boost_max", 1.3)
+        self.punct_boost_max: float = meta.get("punct_boost_max", 1.3)
         prof = settings.profiles.get("live_sentiment")
         self.neutral_band = prof.neutral_band if prof else 0.15
-        log.info("Loaded sentiment lexicon: %d words, window=%d", len(self.words), self.window)
+        log.info("Loaded sentiment lexicon v%s: %d words, %d phrases, %d emojis",
+                 meta.get("version", "?"), len(self.words), len(self.phrases), len(self.emojis))
 
     def tokenize(self, text: str) -> list[str]:
         return self._TOKEN.findall(text.lower())
 
-    def score(self, text: str) -> tuple[float, list[dict]]:
-        """Stateless (only reads immutable data set in __init__), safe under concurrent calls."""
-        tokens = self.tokenize(text)
+    def _emphasis_multiplier(self, text: str) -> float:
+        """CAPS and repeated ! / ? give a small boost, but the COMBINED total is what's capped --
+        capping each source separately still let them stack past the intended ceiling, which
+        would have let someone inflate a score just by shouting AND mashing punctuation at once."""
+        words_all = text.split()
+        caps = len(self._CAPS_WORD.findall(text))
+        caps_ratio = caps / len(words_all) if words_all else 0.0
+        caps_boost = caps_ratio * 0.6
+        bangs = self._EXCLAIM.search(text.strip())
+        punct_boost = 0.08 * len(bangs.group()) if bangs else 0.0
+        overall_max = max(self.cap_boost_max, self.punct_boost_max) - 1.0
+        return round(1.0 + min(caps_boost + punct_boost, overall_max), 4)
+
+    def _emoji_matches(self, text: str) -> list[dict]:
+        matches = []
+        for emo, base in self.emojis.items():
+            count = text.count(emo)
+            if count:
+                # diminishing returns for repetition (matches the JS port): 1x, then +0.2 per repeat, capped at 1.5x
+                mult = min(1.0 + 0.2 * (count - 1), 1.5)
+                matches.append({"type": "emoji", "word": emo, "base": base, "multiplier": round(mult, 3),
+                                "negated": False, "contribution": round(base * mult, 3), "weight": 1.0})
+        return matches
+
+    def _match_phrases(self, tokens: list[str]) -> tuple[list[dict], set[int]]:
+        consumed: set[int] = set()
         matches: list[dict] = []
-        total = 0.0
+        for words, score in self.phrases:                    # longest phrases first (see __init__ sort)
+            n = len(words)
+            i = 0
+            while i <= len(tokens) - n:
+                if all(idx not in consumed for idx in range(i, i + n)) and tokens[i:i + n] == words:
+                    matches.append({"type": "phrase", "word": " ".join(words), "base": score, "multiplier": 1.0,
+                                    "negated": False, "contribution": round(score, 3)})
+                    consumed.update(range(i, i + n))
+                    i += n
+                else:
+                    i += 1
+        return matches, consumed
+
+    def _score_tokens(self, tokens: list[str], weight: float) -> list[dict]:
+        phrase_matches, consumed = self._match_phrases(tokens)
+        for m in phrase_matches:
+            m["weight"] = weight
+        word_matches = []
         for i, tok in enumerate(tokens):
+            if i in consumed:
+                continue
             base = self.words.get(tok)
+            if base is None:
+                base = self._stem_index.get(_stem(tok))
             if base is None:
                 continue
             mult, negate = 1.0, False
@@ -221,12 +293,50 @@ class LexiconSentimentBackend(ChoiceBackend):
                     break
                 t2 = tokens[j]
                 negate = negate or t2 in self.negators
-                mult = self.intensifiers.get(t2, mult)
+                if t2 in self.intensifiers:
+                    mult = self.intensifiers[t2]
+                elif t2 in self.diminishers:
+                    mult = self.diminishers[t2]
             val = round(base * mult * (-1.0 if negate else 1.0), 3)
-            matches.append({"word": tok, "base": base, "multiplier": mult, "negated": negate, "contribution": val})
-            total += val
-        avg = round(total / len(matches), 4) if matches else 0.0
+            word_matches.append({"type": "word", "word": tok, "base": base, "multiplier": mult,
+                                 "negated": negate, "contribution": val, "weight": weight})
+        return phrase_matches + word_matches
+
+    def _score_sentence(self, sentence: str) -> list[dict]:
+        tokens = self.tokenize(sentence)
+        breaker_idx = next((i for i, t in enumerate(tokens) if t in self.scope_breakers), None)
+        if breaker_idx is None:
+            return self._score_tokens(tokens, weight=1.0)
+        # The clause AFTER a contrast word ("but", "however"...) usually carries the speaker's real
+        # point ("great UI but slow app"), so it's weighted up; the clause before is weighted down.
+        # This also incidentally stops a negator before the breaker from reaching past it.
+        before = self._score_tokens(tokens[:breaker_idx], weight=0.6)
+        after = self._score_tokens(tokens[breaker_idx + 1:], weight=1.6)
+        return before + after
+
+    def score(self, text: str) -> tuple[float, list[dict]]:
+        """Stateless (only reads immutable data set in __init__), safe under concurrent calls.
+        Returns (weighted-average score, matches) -- matches carry 'type' (word/phrase/emoji) and
+        'weight' (clause weighting) for callers that want more than the headline number."""
+        matches: list[dict] = []
+        for sentence in self._SENTENCE_SPLIT.split(text):
+            if sentence.strip():
+                matches += self._score_sentence(sentence)
+        matches += self._emoji_matches(text)
+        if not matches:
+            return 0.0, []
+        weight_total = sum(m["weight"] for m in matches) or 1.0
+        raw_avg = sum(m["contribution"] * m["weight"] for m in matches) / weight_total
+        avg = round(raw_avg * self._emphasis_multiplier(text), 4)
         return avg, matches
+
+    def signal_summary(self, matches: list[dict]) -> dict:
+        """positive_score/negative_score/mixed: kept separate from the single label so a caller
+        that wants more than Positive/Negative/Neutral (e.g. flagging 'mixed signals' in the UI)
+        doesn't have to re-derive it from raw matches."""
+        pos = round(sum(m["contribution"] * m["weight"] for m in matches if m["contribution"] > 0), 4)
+        neg = round(sum(m["contribution"] * m["weight"] for m in matches if m["contribution"] < 0), 4)
+        return {"positive_score": pos, "negative_score": neg, "mixed": pos > 0.5 and neg < -0.5}
 
     def label_for(self, avg: float) -> str:
         if avg > self.neutral_band:
@@ -235,8 +345,15 @@ class LexiconSentimentBackend(ChoiceBackend):
             return "Negative"
         return "Neutral"
 
-    def confidence_for(self, avg: float) -> float:
-        return round(min(abs(avg) / ((self.neutral_band * 4) or 1e-9), 1.0), 4)
+    def confidence_for(self, avg: float, matches: list[dict] | None = None) -> float:
+        """More than magnitude alone: also rewards having several agreeing signals, and pulls
+        back when the text is mixed (positive and negative both present in real strength)."""
+        magnitude = min(abs(avg) / ((self.neutral_band * 4) or 1e-9), 1.0)
+        if not matches:
+            return round(magnitude, 4)
+        volume = min(len(matches) / 4, 1.0)
+        agreement = 0.5 if self.signal_summary(matches)["mixed"] else 1.0
+        return round(min(0.6 * magnitude + 0.25 * volume * agreement + 0.15 * agreement, 1.0), 4)
 
     @staticmethod
     def _bucket(labels: list[str]) -> dict[str, str]:
@@ -254,10 +371,10 @@ class LexiconSentimentBackend(ChoiceBackend):
         return out
 
     def choose(self, context, question, labels, *, debias=1, hints=None) -> dict:
-        avg, _ = self.score(context)
+        avg, matches = self.score(context)
         bucket = self._bucket(labels)
         choice = bucket.get({"Positive": "pos", "Negative": "neg", "Neutral": "neu"}[self.label_for(avg)]) or labels[0]
-        conf = self.confidence_for(avg)
+        conf = self.confidence_for(avg, matches)
         rest = (1.0 - conf) / max(1, len(labels) - 1)
         probs = {label: (conf if label == choice else rest) for label in labels}
         total = sum(probs.values()) or 1.0
@@ -313,8 +430,6 @@ class ReflexDecisionBackend(ChoiceBackend):
         self.ambiguous_band: float = data.get("thresholds", {}).get("ambiguous_margin_px", 12)
         log.info("Loaded reflex rules for mode=%s: %d actions, %d obstacle profiles",
                  mode, len(self.actions), len(self.obstacle_profiles))
-        print("Loaded reflex rules for mode=%s: %d actions, %d obstacle profiles" %
-              (mode, len(self.actions), len(self.obstacle_profiles)))
 
     def _airtime_frames(self) -> float:
         g = self.physics.get("GRAVITY", 0.6)

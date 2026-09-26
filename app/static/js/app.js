@@ -3,7 +3,7 @@
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const sleep = ms => new Promise(r => setTimeout(r, ms));
-  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); }));
   const fmtBytes = n => n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`;
   const show = s => { const e = typeof s === 'string' ? $(s) : s; if (e) e.hidden = false; };
@@ -16,22 +16,22 @@
 
   /* ---- API ---- */
   class ApiError extends Error {
-    constructor(message, o = {}) { super(message); Object.assign(this, {status: 0, hint: null, detail: null, requestId: null}, o); }
+    constructor(message, o = {}) { super(message); Object.assign(this, { status: 0, hint: null, detail: null, requestId: null }, o); }
   }
   async function parse(res) {
     let body = null;
     try { body = await res.json(); } catch (_) { /* non-JSON body */ }
     if (res.ok) return body;
     const e = (body && body.error) || {};
-    throw new ApiError(e.message || `The server replied with an error (${res.status}).`, {status: res.status, hint: e.hint, detail: e.detail, requestId: e.request_id});
+    throw new ApiError(e.message || `The server replied with an error (${res.status}).`, { status: res.status, hint: e.hint, detail: e.detail, requestId: e.request_id });
   }
-  async function api(url, {method = 'GET', json, form} = {}) {
-    const opt = {method, headers: {Accept: 'application/json'}};
+  async function api(url, { method = 'GET', json, form } = {}) {
+    const opt = { method, headers: { Accept: 'application/json' } };
     if (json !== undefined) { opt.headers['Content-Type'] = 'application/json'; opt.body = JSON.stringify(json); }
     if (form) opt.body = form;
     let res;
     try { res = await fetch(url, opt); }
-    catch (_) { throw new ApiError('Cannot reach the server. Check your network connection.', {status: 0}); }
+    catch (_) { throw new ApiError('Cannot reach the server. Check your network connection.', { status: 0 }); }
     return parse(res);
   }
   /* XHR instead of fetch: gives upload progress. */
@@ -41,8 +41,8 @@
       x.open('POST', url);
       x.setRequestHeader('Accept', 'application/json');
       x.upload.onprogress = e => e.lengthComputable && onProgress && onProgress(e.loaded / e.total);
-      x.onerror = () => reject(new ApiError('The upload was interrupted. Check your connection and try again.', {status: 0}));
-      x.onload = async () => { try { resolve(await parse(new Response(x.responseText, {status: x.status}))); } catch (e) { reject(e); } };
+      x.onerror = () => reject(new ApiError('The upload was interrupted. Check your connection and try again.', { status: 0 }));
+      x.onload = async () => { try { resolve(await parse(new Response(x.responseText, { status: x.status }))); } catch (e) { reject(e); } };
       x.send(form);
     });
   }
@@ -65,7 +65,7 @@
 
   /* ---- polling that survives network drops: keeps retrying with back-off and shows a banner ---- */
   function setOnline(ok) { const c = $('#conn'); if (c) c.hidden = ok; }
-  function poll(url, {every, onData, until, onError} = {}) {
+  function poll(url, { every, onData, until, onError } = {}) {
     let stop = false, fails = 0;
     const base = every || +document.body.dataset.poll || 1500;
     (async function loop() {
@@ -91,15 +91,32 @@
     $('#active-text').textContent = d.count === 1 ? `1 job running (${Math.round(d.percent)}%)` : `${d.count} jobs running (${Math.round(d.percent)}%)`;
     pill.href = d.count === 1 ? `/jobs/${d.jobs[0].id}` : '/jobs';
   }
-  const refreshActive = () => api('/api/jobs/active').then(paintPill).catch(() => {});
+  const refreshActive = () => api('/api/jobs/active').then(paintPill).catch(() => { });
 
   /* ---- shell: mobile menu ---- */
   document.addEventListener('DOMContentLoaded', () => {
     const rail = $('#rail'), tg = $('#rail-toggle');
+
+    const shell = $('#shell');
+    const railCollapseBtn = $('#rail-collapse-toggle');
+
+    // Restore preference
+    if (localStorage.getItem('rail-collapsed') === 'true' && window.innerWidth > 900) {
+      shell.classList.add('rail-collapsed');
+    }
+
+    if (railCollapseBtn) {
+      railCollapseBtn.addEventListener('click', () => {
+        const isCollapsed = document.body.classList.toggle('rail-collapsed');
+        localStorage.setItem('rail-collapsed', isCollapsed);
+      });
+    }
+
+
     if (tg) tg.addEventListener('click', () => rail.classList.toggle('open'));
     document.addEventListener('click', e => { if (rail && rail.classList.contains('open') && !rail.contains(e.target) && e.target !== tg) rail.classList.remove('open'); });
-    if ($('#active-pill')) poll('/api/jobs/active', {every: 3000, onData: paintPill, onError: () => {}});
+    if ($('#active-pill')) poll('/api/jobs/active', { every: 3000, onData: paintPill, onError: () => { } });
   });
 
-  window.App = {$, $$, esc, sleep, uuid, fmtBytes, show, hide, api, upload, errorHtml, showErr, toast, setBusy, poll, catClass, ApiError, refreshActive};
+  window.App = { $, $$, esc, sleep, uuid, fmtBytes, show, hide, api, upload, errorHtml, showErr, toast, setBusy, poll, catClass, ApiError, refreshActive };
 })();

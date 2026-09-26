@@ -26,11 +26,13 @@
         </div>
         <div class="row">
           <span id="pill" class="badge pill-neu">Neutral</span>
+          <span id="mixed-badge" class="badge b-warn" hidden>Mixed signals</span>
           <span id="engine-badge" class="badge b-info">warming up...</span>
           <span class="spacer"></span>
           <span class="small muted num" id="latency"></span>
         </div>
         <div class="bar sent-neu" id="score-bar-wrap"><i id="score-bar" style="width:50%"></i></div>
+        <div class="small muted num" id="signal-split"></div>
       </div>
     </section>
 
@@ -46,7 +48,8 @@
         <div class="panel-body small muted stack">
           <p>On load, the browser checks device memory and times a warmup score. Fast enough → the lexicon (~{{ lexicon_kb }} KB) loads in the background and scoring moves fully client-side, no network call per keystroke.</p>
           <p>Looks constrained, or slows down mid-session → it falls back to this same algorithm running on the server, debounced, with stale in-flight responses cancelled so a slow reply can't overwrite a newer one.</p>
-          <p>Words outside the lexicon are ignored automatically. Negators (not, never, no...) and intensifiers (very, extremely...) within {{ negation_window }} words before a sentiment word flip or scale its contribution — the only "stop words" treated specially.</p>
+          <p>Words outside the lexicon are ignored automatically. Negators (not, never, no...) and intensifiers/diminishers (very, extremely, slightly...) within {{ negation_window }} words before a sentiment word flip or scale its contribution.</p>
+          <p>Phrases ("not bad", "waste of money"...) are matched before single words, so they aren't double-counted. A sentence split by "but" / "however" / "although" weights the clause after it higher — "great UI but slow app" reads negative, not a wash. Emojis score too, and CAPS/!!! give a small, capped emphasis boost.</p>
         </div>
       </section>
     </div>
