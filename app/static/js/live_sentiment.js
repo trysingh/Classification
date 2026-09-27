@@ -16,6 +16,7 @@
   let forced = 'auto';            // user override from the Mode selector: 'auto' | 'local' | 'remote'
   let consecutiveSlow = 0;
   let debounceTimer = null;
+  let escalateTimer = null;       // separate, longer debounce specifically for the expensive escalation path
   let inFlight = null;            // AbortController for the current remote request
   let seq = 0;                    // guards a slow, now-stale remote response from overwriting a newer result
 
@@ -175,35 +176,53 @@
 
   function setBadge(m, note) {
     const b = $('#engine-badge');
-    b.textContent = (m === 'local' ? '\u26a1 Local' : '\u2601 Server') + (note ? ` \u2014 ${note}` : '');
-    b.className = `badge ${m === 'local' ? 'b-ok' : 'b-info'}`;
+    const label = m === 'local' ? '\u26a1 Local' : m === 'model' ? '\u{1F9E0} Model' : '\u2601 Server';
+    b.textContent = label + (note ? ` \u2014 ${note}` : '');
+    b.className = `badge ${m === 'local' ? 'b-ok' : m === 'model' ? 'b-warn' : 'b-info'}`;
   }
 
   /* ---- render whatever produced the result, local or remote ---- */
-  function paint(label, avg, matches, ms, m, signals) {
+  function paint(label, avg, matches, ms, m, signals, source, escalationError, probabilities) {
     const pill = $('#pill');
     pill.textContent = label;
     pill.className = `badge pill-${sentClass(label)}`;
     $('#mixed-badge').hidden = !(signals && signals.mixed);
     $('#score-bar-wrap').className = `bar sent-${sentClass(label)}`;
     $('#score-bar').style.width = (50 + clamp(avg, -3, 3) / 3 * 50) + '%';
-    $('#latency').textContent = `${m === 'local' ? '\u26a1' : '\u2601'} ${ms.toFixed(1)}ms`;
-    setBadge(m, forced !== 'auto' ? 'forced by you' : m === 'local' ? 'client-side' : 'server round trip');
+    $('#latency').textContent = `${m === 'local' ? '\u26a1' : m === 'model' ? '\u{1F9E0}' : '\u2601'} ${ms.toFixed(1)}ms`;
+    const noteMap = {local: 'client-side', server: 'server round trip', model: 'System-1 model, no lexicon match'};
+    setBadge(m, forced !== 'auto' && m !== 'model' ? 'forced by you' : noteMap[m]);
     if (signals) {
       $('#signal-split').textContent = `+${signals.positive_score.toFixed(2)} positive \u00b7 ${signals.negative_score.toFixed(2)} negative`;
     }
-    $('#matches').innerHTML = matches.length
-      ? matches.slice(0, 12).map(mm => {
-          const tag = mm.type === 'phrase' ? '<b class="tag">phrase</b>' : mm.type === 'emoji' ? '<b class="tag">emoji</b>' : '';
-          const title = mm.type === 'word' ? `base ${mm.base}${mm.multiplier !== 1 ? ` \u00d7 ${mm.multiplier}` : ''}${mm.negated ? ', negated' : ''}` : `base ${mm.base}`;
-          return `<span class="chip" title="${title}">${tag}${esc(mm.word)} <b class="num">${mm.contribution > 0 ? '+' : ''}${mm.contribution}</b></span>`;
-        }).join('')
-      : '<span class="hint">No sentiment words matched yet.</span>';
+    const escalationNote = escalationError
+      ? `<div class="hint" style="margin-top:.4rem">Model unavailable: ${esc(escalationError)}</div>` : '';
+    if (probabilities) {
+      // No word-level matches to show for a model answer -- show what IS explainable: its
+      // per-label confidence, sorted highest first, so "how is the sentiment" has an answer.
+      const rows = Object.entries(probabilities).sort((a, b) => b[1] - a[1])
+        .map(([lab, p]) => `<div class="row" style="gap:.5rem;margin-bottom:.25rem">
+            <span class="small" style="width:4.5rem;flex:none">${esc(lab)}</span>
+            <div class="bar sent-${sentClass(lab)}" style="flex:1"><i style="width:${(p * 100).toFixed(0)}%"></i></div>
+            <span class="small num" style="width:2.5rem;text-align:right">${(p * 100).toFixed(0)}%</span></div>`).join('');
+      $('#matches').innerHTML = `<div class="hint" style="margin-bottom:.5rem">No vocabulary match -- a System-1 model's per-label confidence:</div>${rows}${escalationNote}`;
+    } else {
+      $('#matches').innerHTML = (matches.length
+        ? matches.slice(0, 12).map(mm => {
+            const tag = mm.type === 'phrase' ? '<b class="tag">phrase</b>' : mm.type === 'emoji' ? '<b class="tag">emoji</b>' : '';
+            const title = mm.type === 'word' ? `base ${mm.base}${mm.multiplier !== 1 ? ` \u00d7 ${mm.multiplier}` : ''}${mm.negated ? ', negated' : ''}` : `base ${mm.base}`;
+            return `<span class="chip" title="${title}">${tag}${esc(mm.word)} <b class="num">${mm.contribution > 0 ? '+' : ''}${mm.contribution}</b></span>`;
+          }).join('')
+        : source === 'system1'
+          ? '<span class="hint">No vocabulary match -- a System-1 model judged this one instead of the lexicon.</span>'
+          : '<span class="hint">No sentiment words matched yet.</span>') + escalationNote;
+    }
   }
 
   /* ---- input handling: local gets a tiny debounce (smoothing only); remote gets a real one + cancellation ---- */
   function onInput() {
     clearTimeout(debounceTimer);
+    clearTimeout(escalateTimer);    // typing again means "not paused yet" -- cancel any pending model call too
     const effective = forced === 'auto' ? mode : forced;
     debounceTimer = setTimeout(effective === 'local' && lexicon ? runLocal : runRemote, effective === 'local' && lexicon ? 60 : 280);
   }
@@ -213,25 +232,39 @@
     const t0 = performance.now();
     const {avg, matches} = scoreLocal(text);
     const ms = performance.now() - t0;
-    paint(labelFor(avg), avg, matches, ms, 'local', signalSummary(matches));
+    if (!matches.length && text.trim()) {
+      // Zero lexicon signal -- a vocabulary gap, not evidence of Neutral. Escalating to a real
+      // model on EVERY keystroke here was the bug: a model call can take seconds, so firing one
+      // per character while still typing queued up dozens of them. Wait for an actual pause
+      // (this timer gets cancelled and reset by onInput() on every keystroke, same as normal
+      // debouncing) before spending anything on the network.
+      setBadge('remote', 'no vocabulary match \u2014 will ask a model if you pause');
+      clearTimeout(escalateTimer);
+      escalateTimer = setTimeout(() => runRemote(true), 600);
+      return;
+    }
+    clearTimeout(escalateTimer);    // the lexicon found something after all -- no need to ask a model
+    paint(labelFor(avg), avg, matches, ms, 'local', signalSummary(matches), 'lexicon');
     if (forced === 'auto') {                      // auto-downgrade if this device starts struggling mid-session
       consecutiveSlow = ms > 8 ? consecutiveSlow + 1 : 0;
       if (consecutiveSlow >= 3) { mode = 'remote'; consecutiveSlow = 0; setBadge('remote', 'local scoring slowed down'); }
     }
   }
 
-  async function runRemote() {
+  async function runRemote(escalating) {
     const text = $('#text').value, my = ++seq;
     if (inFlight) inFlight.abort();
     inFlight = new AbortController();
+    if (escalating) setBadge('model', 'asking the model, this can take a few seconds\u2026');
     const t0 = performance.now();
     try {
       const res = await fetch('/api/live/sentiment', {method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({text}), signal: inFlight.signal});
       const d = await res.json();
       if (my !== seq) return;                      // a newer keystroke already started another request
-      paint(d.label, d.score, d.matches, performance.now() - t0, 'server',
-            {positive_score: d.positive_score, negative_score: d.negative_score, mixed: d.mixed});
+      paint(d.label, d.score, d.matches, performance.now() - t0, d.source === 'system1' ? 'model' : 'server',
+            {positive_score: d.positive_score, negative_score: d.negative_score, mixed: d.mixed}, d.source,
+            d.escalation_error, d.probabilities);
     } catch (e) { /* aborted (superseded) or offline: the next keystroke retries */ }
   }
 

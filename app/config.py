@@ -58,6 +58,10 @@ class ProfileConfig(BaseModel):
     # None = ReflexDecisionBackend falls back to the static/data/<mode>_reflex_rules.json naming
     # convention (what dino_adapter.js's hardcoded fetch path also assumes).
     reflex_asset: Optional[str] = None
+    # /live only: which backend to consult when the primary lexicon finds ZERO vocabulary
+    # matches at all (as opposed to profile.backend, which stays the lexicon for the batch
+    # pipeline). None = no escalation, stays honestly "Neutral, no data" as before.
+    escalation_backend: Optional[str] = None
     # /decide/<mode> page only (not in the original patch notes -- added so the promoted Jinja
     # template stays mode-generic too, matching "a new mode needs no engine change": which JS
     # files the page includes (under /static/js/, in order) and the global factory function
@@ -146,6 +150,8 @@ DEFAULT_PROFILES: dict[str, ProfileConfig] = {
         backend="lexicon_sentiment",
         lexicon_asset="data/live_sentiment_lexicon.json",
         neutral_band=0.15,
+        escalation_backend="laya",   # causal_lm: used only when the lexicon matches nothing at all (see /live)
+        main_category_question="What is the overall sentiment of this message: Positive, Negative, or Neutral?",
         seed_taxonomy={"Positive": [], "Negative": [], "Neutral": []},
     ),
     "dino": ProfileConfig(
@@ -304,8 +310,8 @@ class AppSettings(BaseSettings):
         v = getattr(self.profile(key), field, None)
         return v if v is not None else getattr(self, field)
 
-    def backend_for(self, key: str, override: str | None = None) -> str:
-        chosen = override or self.profile(key).backend or self.classifier_backend
+    def backend_for(self, key: str, override: str | None = None, field: str = "backend") -> str:
+        chosen = override or getattr(self.profile(key), field) or self.classifier_backend
         if chosen not in ("causal_lm", "laya", "keyword", "lexicon_sentiment", "reflex_decision"):
             raise ConfigError(f"Unknown engine '{chosen}'.",
                               hint="Use causal_lm, laya, keyword, lexicon_sentiment or reflex_decision.")

@@ -50,6 +50,7 @@
           <p>Looks constrained, or slows down mid-session → it falls back to this same algorithm running on the server, debounced, with stale in-flight responses cancelled so a slow reply can't overwrite a newer one.</p>
           <p>Words outside the lexicon are ignored automatically. Negators (not, never, no...) and intensifiers/diminishers (very, extremely, slightly...) within {{ negation_window }} words before a sentiment word flip or scale its contribution.</p>
           <p>Phrases ("not bad", "waste of money"...) are matched before single words, so they aren't double-counted. A sentence split by "but" / "however" / "although" weights the clause after it higher — "great UI but slow app" reads negative, not a wash. Emojis score too, and CAPS/!!! give a small, capped emphasis boost.</p>
+          <p>If the lexicon finds nothing at all — no known words, no phrases, no emojis — that's a vocabulary gap, not evidence the text is neutral. This is the one case the browser can't answer on its own (it can't run a real model), so it asks the server, which asks a System-1 model instead of guessing.</p>
         </div>
       </section>
     </div>
