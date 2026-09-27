@@ -63,6 +63,27 @@
     color: #fff;
     border-color: var(--warn, #c93);
   }
+
+  .action-glyphs {
+    display: block;
+    width: 100%;
+    max-width: 300px;
+    height: auto;
+  }
+
+  @media (max-width: 600px) {
+    #conf-track {
+      min-width: 0;
+      width: 100%;
+      flex: 1 1 100px;
+    }
+  }
+
+  @media (max-width: 380px) {
+    .action-glyphs {
+      max-width: 270px;
+    }
+  }
 </style>
 <div class="stack">
   <div class="page-head">
@@ -73,12 +94,11 @@
         never waits on the reply before acting.</p>
     </div>
   </div>
-
+  <!-- style="max-width:100%;width:100%;border:1px solid var(--line);border-radius:var(--r-s);background:#fff" -->
   <div class="grid side">
     <section class="panel">
       <div class="panel-body stack">
-        <canvas id="stage" width="600" height="150"
-          style="max-width:100%;width:100%;border:1px solid var(--line);border-radius:var(--r-s);background:#fff"></canvas>
+        <canvas id="stage" width="600" height="150" class="game-canvas"></canvas>
         <div class="row">
           <button type="button" class="btn primary" id="start">Start</button>
           <label for="driver-select" class="small muted">Driver:</label>
@@ -91,7 +111,7 @@
         </div>
 
         <div class="stack" id="decision-panel" style="gap:.6rem">
-          <svg id="action-glyphs" viewBox="0 0 300 90" width="100%" height="90" style="max-width:280px">
+          <svg id="action-glyphs" viewBox="0 0 300 90" width="100%" height="90" class="action-glyphs">
             <g class="glyph" data-action="Run">
               <rect x="10" y="10" width="70" height="70" rx="10" class="glyph-bg" />
               <path d="M22 55 L40 38 L52 48 L70 25" class="glyph-icon" stroke-width="4" fill="none"
@@ -173,7 +193,7 @@
 
   function updateDecisionPanel(r, src) {
     const action = pickField(r, 'action', 'Run');
-    
+
     const confidence = Number(pickField(r, 'confidence', 0)) || 0;
     const ambiguous = !!pickField(r, 'ambiguous', false);
     const triggerPx = pickField(r, 'trigger_px', null);
@@ -223,42 +243,42 @@
     list.insertBefore(li, list.firstChild);
     while (list.children.length > MAX_LOG_ROWS) list.removeChild(list.lastChild);
   }
-/*
-  document.getElementById('start').addEventListener('click', async () => {
-    const btn = document.getElementById('start');
-    const driverSelect = document.getElementById('driver-select');
-    const modeDriver = driverSelect ? driverSelect.value : 'frontend';
-    btn.disabled = true; btn.textContent = 'Running';
-    // NOTE: DinoMini.start() is dino-specific -- a second mode needs its own start-the-canvas
-    // call here too (or, better, have that mode's adapter factory start its own game internally
-    // and drop this line). Not generalized further since no second mode exists yet to test against.
-    DinoMini.start(document.getElementById('stage'));
-    // requestAnimationFrame(pollReactionWindow); 
-    DinoMini.onReaction(prependReactionRow);
-    const adapter = await window['{{ prof.adapter_factory }}']();
-    DecisionEngine.registerMode('{{ mode }}', adapter);
-    DecisionEngine.start('{{ mode }}', {
-      onDecision: (r, src) => {
-        const conf = r.confidence !== undefined ? r.confidence : (r.reflex ? r.reflex.confidence : 0);
-        document.getElementById('hud').textContent = src + '  action=' + r.action + '  conf=' + Number(conf || 0).toFixed(2);
-        updateDecisionPanel(r, src);
-      }
+  /*
+    document.getElementById('start').addEventListener('click', async () => {
+      const btn = document.getElementById('start');
+      const driverSelect = document.getElementById('driver-select');
+      const modeDriver = driverSelect ? driverSelect.value : 'frontend';
+      btn.disabled = true; btn.textContent = 'Running';
+      // NOTE: DinoMini.start() is dino-specific -- a second mode needs its own start-the-canvas
+      // call here too (or, better, have that mode's adapter factory start its own game internally
+      // and drop this line). Not generalized further since no second mode exists yet to test against.
+      DinoMini.start(document.getElementById('stage'));
+      // requestAnimationFrame(pollReactionWindow); 
+      DinoMini.onReaction(prependReactionRow);
+      const adapter = await window['{{ prof.adapter_factory }}']();
+      DecisionEngine.registerMode('{{ mode }}', adapter);
+      DecisionEngine.start('{{ mode }}', {
+        onDecision: (r, src) => {
+          const conf = r.confidence !== undefined ? r.confidence : (r.reflex ? r.reflex.confidence : 0);
+          document.getElementById('hud').textContent = src + '  action=' + r.action + '  conf=' + Number(conf || 0).toFixed(2);
+          updateDecisionPanel(r, src);
+        }
+      });
+      // If "backend" is selected, configure DecisionEngine to force server evaluation
+      const engineConfig = {
+        forceServer: (modeDriver === 'backend'),
+        onDecision: (r, src) => {
+          const conf = r.confidence !== undefined ? r.confidence : (r.reflex ? r.reflex.confidence : 0);
+          document.getElementById('hud').textContent = 
+            `${src}  action=${r.action}  conf=${Number(conf || 0).toFixed(2)}`;
+          updateDecisionPanel(r, src);
+        }
+      };
+  
+      DecisionEngine.start('{{ mode }}', engineConfig);
+  
     });
-    // If "backend" is selected, configure DecisionEngine to force server evaluation
-    const engineConfig = {
-      forceServer: (modeDriver === 'backend'),
-      onDecision: (r, src) => {
-        const conf = r.confidence !== undefined ? r.confidence : (r.reflex ? r.reflex.confidence : 0);
-        document.getElementById('hud').textContent = 
-          `${src}  action=${r.action}  conf=${Number(conf || 0).toFixed(2)}`;
-        updateDecisionPanel(r, src);
-      }
-    };
-
-    DecisionEngine.start('{{ mode }}', engineConfig);
-
-  });
-*/
+  */
   document.getElementById('start').addEventListener('click', async () => {
     const btn = document.getElementById('start');
     const driverSelect = document.getElementById('driver-select');
@@ -292,7 +312,7 @@
       forceServer: (modeDriver === 'backend'),
       onDecision: (r, src) => {
         const conf = r.confidence !== undefined ? r.confidence : (r.reflex ? r.reflex.confidence : 0);
-        document.getElementById('hud').textContent = 
+        document.getElementById('hud').textContent =
           `${src}  action=${r.action}  conf=${Number(conf || 0).toFixed(2)}`;
         updateDecisionPanel(r, src);
       }

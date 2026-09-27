@@ -184,7 +184,7 @@ class AppSettings(BaseSettings):
     # ---- Application ----
     app_name: str = "OpenJEV Classifier"
     debug: bool = False                  # True: auto-reload + stack traces for unexpected errors in the UI
-    host: str = "127.0.0.1"
+    host: str = "0.0.0.0"
     port: int = 8000
     log_level: str = "INFO"
 
