@@ -69,6 +69,9 @@ class ProfileConfig(BaseModel):
     # means this profile isn't a playable /decide page.
     game_scripts: list[str] = []
     adapter_factory: str = ""
+    # False for Lab-only profiles with no meaningful text column (dino, sudoku) -- keeps them out
+    # of the single/batch/taxonomy file-classification dropdowns, where they'd be confusing.
+    selectable_for_files: bool = True
     # Per-profile overrides (None = inherit the global value)
     max_main_categories: Optional[int] = None
     max_sub_categories: Optional[int] = None
@@ -150,7 +153,7 @@ DEFAULT_PROFILES: dict[str, ProfileConfig] = {
         backend="lexicon_sentiment",
         lexicon_asset="data/live_sentiment_lexicon.json",
         neutral_band=0.15,
-        escalation_backend="laya",   # causal_lm: used only when the lexicon matches nothing at all (see /live)
+        escalation_backend="causal_lm",   # used only when the lexicon matches nothing at all (see /live)
         main_category_question="What is the overall sentiment of this message: Positive, Negative, or Neutral?",
         seed_taxonomy={"Positive": [], "Negative": [], "Neutral": []},
     ),
@@ -158,6 +161,7 @@ DEFAULT_PROFILES: dict[str, ProfileConfig] = {
         # NOT run through HierarchicalClassifier / the batch pipeline -- no text column makes
         # sense for a per-tick game state. Exists purely to hand /decide/dino its action set
         # (seed_taxonomy keys double as labels), reflex_asset, and default escalation backend.
+        selectable_for_files=False,
         label="Chrome Dino (reflex + System-1 escalation demo)",
         description="real-time obstacle-avoidance decisions for an offline endless-runner",
         item_name="game tick",
@@ -175,6 +179,23 @@ DEFAULT_PROFILES: dict[str, ProfileConfig] = {
             "take right now?"),
         seed_taxonomy={"Jump": [], "Duck": [], "Run": []},   # doubles as the action label set
     ),
+    "sudoku": ProfileConfig(
+        # Same "reflex handles the obvious, classifier handles the ambiguous" split as dino, for
+        # a puzzle instead of a real-time game: naked/hidden singles (app/engine/sudoku.py, pure
+        # logic, no ChoiceBackend) place every cell that's logically certain; a real System-1
+        # model is only consulted for a cell where neither technique applies -- see /sudoku.
+        # Also not run through the batch pipeline: no text column, no seed_taxonomy (the "labels"
+        # for a guess are that cell's legal candidate digits, computed per-cell, not fixed).
+        label="Sudoku solver (reflex + classifier)",
+        description="a partially-filled Sudoku cell, given what's already placed in its row, column and box",
+        item_name="cell",
+        level1_name="digit",
+        backend="laya",
+        main_category_question=(
+            "Which digit should be placed in this Sudoku cell? Answer with the single most "
+            "likely correct digit."),
+        selectable_for_files=False,
+    ),
 }
 
 
@@ -184,7 +205,7 @@ class AppSettings(BaseSettings):
     # ---- Application ----
     app_name: str = "OpenJEV Classifier"
     debug: bool = False                  # True: auto-reload + stack traces for unexpected errors in the UI
-    host: str = "0.0.0.0"
+    host: str = "127.0.0.1"
     port: int = 8000
     log_level: str = "INFO"
 

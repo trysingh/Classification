@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Sudoku solver - {{ app_name }}{% endblock %}
+{% block content %}
+<div class="stack">
+  <div class="page-head">
+    <div>
+      <h1>Sudoku solver <span class="badge b-info">Demo</span></h1>
+      <p class="lede">Watches the OpenJEV classification approach solve a puzzle one cell at a time. Two logically-certain techniques (naked and hidden singles) handle most cells for free; a real System-1 model is only consulted when neither applies, with its actual probability distribution shown.</p>
+    </div>
+  </div>
+
+  <div class="grid side">
+    <section class="panel">
+      <div class="panel-body stack">
+        <div class="row">
+          <select id="difficulty" aria-label="Difficulty">
+            {% for k, cfg in difficulties.items() %}<option value="{{ k }}" {{ 'selected' if k == 'easy' else '' }}>{{ cfg.label }} ({{ cfg.clues }} clues)</option>{% endfor %}
+          </select>
+          <button type="button" class="btn primary" id="new-board">New board</button>
+          <span class="spacer"></span>
+          <select id="backend" aria-label="Classifier engine" title="Which engine answers cells that need a real guess">
+            {% for b in backends %}<option value="{{ b.name }}" {{ 'selected' if b.name == default_backend else '' }}>{{ b.label }}{{ '' if b.installed else ' (needs ' ~ b.needs ~ ')' }}</option>{% endfor %}
+          </select>
+        </div>
+
+        <div class="sud-wrap"><div class="sud-grid" id="grid"></div></div>
+        <div class="sud-legend">
+          <span><i class="lg-naked"></i>Naked single</span>
+          <span><i class="lg-hidden"></i>Hidden single</span>
+          <span><i class="lg-classifier"></i>Classifier pick</span>
+        </div>
+
+        <div class="row">
+          <button type="button" class="btn primary" id="next-step" disabled>Next step</button>
+          <button type="button" class="btn" id="auto-play" disabled>Auto-play</button>
+          <span class="spacer"></span>
+          <span class="small muted num" id="progress"></span>
+        </div>
+      </div>
+    </section>
+
+    <div class="stack">
+      <section class="panel">
+        <div class="panel-head"><h2>Why this step</h2></div>
+        <div class="panel-body stack" id="why">
+          <span class="hint">Start a board, then press Next step.</span>
+        </div>
+      </section>
+      <section class="panel">
+        <div class="panel-head"><h2>How this works</h2></div>
+        <div class="panel-body small muted stack">
+          <p>Every empty cell's legal candidates come from real constraint checking: whatever digit already appears in that cell's row, column or 3x3 box is eliminated first, same as solving by hand.</p>
+          <p>A <b>naked single</b> is a cell with exactly one legal candidate left. A <b>hidden single</b> is a digit that has only one legal cell left somewhere in a row, column or box, even if that cell still has other candidates too -- both are logically certain, no guessing.</p>
+          <p>Only when neither applies anywhere on the board does a real System-1 model get asked, with the actual probability distribution shown here. Its pick is checked against the puzzle's true solution: right or wrong, that's shown too, rather than hidden.</p>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}<script src="/static/js/sudoku.js"></script>{% endblock %}
