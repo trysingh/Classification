@@ -11,7 +11,7 @@ come from config), so a new dataset never needs a new classifier class.
 """
 from __future__ import annotations
 
-import time
+import time 
 
 from app.core.errors import BackendError
 
@@ -23,6 +23,7 @@ class HierarchicalClassifier:
         self.debias = settings.eff(profile_key, "debias_permutations")
         self.main_labels = list(taxonomy)
         self.main_q = settings.prompt(profile_key, "main_category_question")
+        print(f"Main Category Question: {self.main_q}")
         # Prompts depend only on the main category, so render them once per taxonomy, not once per row.
         self.sub_q = {m: settings.prompt(profile_key, "sub_category_question", main_category=m)
                       for m in taxonomy if m != self.others}

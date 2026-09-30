@@ -94,12 +94,7 @@ class CausalLMBackend(ChoiceBackend):
             out = self.model.generate(**inputs, max_new_tokens=6, do_sample=False,
                                       pad_token_id=self.tokenizer.eos_token_id)
         text = self.tokenizer.decode(out[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
-        label = text.strip().split("\n")[0].strip(" .")
-        # Free generation (as opposed to choosing among fixed options) is the one place a small
-        # model can go wrong in a way MCQ scoring can't: asked to WRITE a label from scratch, it
-        # sometimes echoes the shape of the instruction back -- "[blank]", "___", "<sub_category>"
-        # -- rather than answering it. Caught here rather than shown to the user.
-        return label if label and not _looks_like_placeholder(label) else _fallback_label(narration)
+        return text.strip().split("\n")[0].strip(" .") or "Unclassified"
 
 
 class LayaBackend(ChoiceBackend):
@@ -144,34 +139,6 @@ def _tokens(text: str) -> list[str]:
     return [_stem(w) for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 1 and w not in _STOP]
 
 
-_WRAP_STRIP = re.compile(r"^[\s\[\]<>{}()\"'`*_.,:;!?-]+|[\s\[\]<>{}()\"'`*_.,:;!?-]+$")
-_PLACEHOLDER_WORDS = {"blank", "tbd", "n a", "none", "null", "unknown", "empty", "placeholder",
-                      "category", "sub category", "main category", "label", "answer", "value", "example"}
-
-
-def _looks_like_placeholder(text: str) -> bool:
-    """True for the failure mode small models fall into when asked to freely WRITE a label rather
-    than pick one from a fixed list: template artefacts like '[blank]', '___', '<sub_category>',
-    'N/A', '?' -- echoing the shape of the instruction rather than answering it."""
-    t = text.strip()
-    core = re.sub(r"[/_-]", " ", _WRAP_STRIP.sub("", t)).strip().lower()
-    if not core or core in _PLACEHOLDER_WORDS:
-        return True
-    if re.fullmatch(r"[a-z ]*(sub ?category|main ?category|placeholder)[a-z ]*", core):
-        return True
-    return sum(c.isalpha() for c in t) < 2
-
-
-def _fallback_label(narration: str) -> str:
-    """Deterministic, always-sane label from the narration's own distinctive words. Used as
-    KeywordBackend's own generate_label(), and as the safety net other backends fall back to
-    when their free-text generation looks like a placeholder rather than a real answer."""
-    words = [w for w in re.findall(r"[A-Za-z][A-Za-z&-]{3,}", narration) if w.lower() not in _STOP]
-    return " ".join(dict.fromkeys(w.title() for w in words[:3])) or "Unclassified"
-
-
-
-
 class KeywordBackend(ChoiceBackend):
     """Dependency-free baseline: word overlap between the text and each label (plus its sub-labels for
     level 1). Not a substitute for the models: it exists for smoke tests, offline demos and CI."""
@@ -197,9 +164,8 @@ class KeywordBackend(ChoiceBackend):
         return {"choice": max(probs, key=probs.get), "probabilities": probs}
 
     def generate_label(self, narration: str, prompt: str) -> str:
-        # words = [w for w in re.findall(r"[A-Za-z][A-Za-z&-]{3,}", narration) if w.lower() not in _STOP]
-        # return " ".join(dict.fromkeys(w.title() for w in words[:3])) or "Unclassified"
-        return _fallback_label(narration)
+        words = [w for w in re.findall(r"[A-Za-z][A-Za-z&-]{3,}", narration) if w.lower() not in _STOP]
+        return " ".join(dict.fromkeys(w.title() for w in words[:3])) or "Unclassified"
 
 
 class LexiconSentimentBackend(ChoiceBackend):
